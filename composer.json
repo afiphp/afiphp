@@ -1,0 +1,22 @@
+{
+    "name": "afiphp/afiphp",
+    "type": "library",
+    "description": "Web Services de AFIP",
+    "keywords": ["afip"],
+    "homepage": "https://github.com/afiphp/afiphp",
+    "license": "MIT",
+    "require": {
+        "php": ">=7.4"
+    },
+    "authors": [
+        {
+            "name": "Claudio Escobar",
+            "email": "claudioe0407@gmail.com"
+        }
+    ],
+    "autoload": {
+        "psr-4": {
+            "Afiphp\\Afiphp": "src"
+        }
+    }
+}
