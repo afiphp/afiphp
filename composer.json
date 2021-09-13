@@ -16,7 +16,11 @@
     ],
     "autoload": {
         "psr-4": {
-            "Afiphp\\Afiphp": "src"
+            "Afiphp\\": "src"
         }
+    },
+    "require-dev": {
+        "pestphp/pest": "^1.18",
+        "symfony/var-dumper": "^5.3"
     }
 }
