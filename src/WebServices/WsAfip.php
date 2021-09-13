@@ -21,7 +21,6 @@ abstract class WsAfip
     protected SoapClient $client;
 
     public abstract function getServiceName(): string;
-    public abstract function getWsdl(): string;
     public abstract function getUrl(): string;
 
     /**
@@ -89,6 +88,12 @@ abstract class WsAfip
         ]);
     }
 
+    public function getWsdl(): string
+    {
+        $suffix = $this->sandbox ? '-sandbox' : '';
+        return __DIR__ . "/wsdl/{$this->getServiceName()}{$suffix}.xml";
+    }
+
     public function getCuit(): string
     {
         return $this->cuit;
@@ -123,8 +128,8 @@ abstract class WsAfip
     {
         $now = date('YmdHis');
 
-        file_put_contents($this->getPath("request-{$method}-{$now}.xml"), $this->client->__getLastRequest());
-        file_put_contents($this->getPath("response-{$method}-{$now}.xml"), $this->client->__getLastRequest());
+        file_put_contents($this->getPath("{$method}-request-{$now}.xml"), $this->client->__getLastRequest());
+        file_put_contents($this->getPath("{$method}-response-{$now}.xml"), $this->client->__getLastRequest());
     }
 
     protected function execute(string $method, array $params = []): object

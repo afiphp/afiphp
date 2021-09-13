@@ -30,19 +30,25 @@ Built on Apr 22, 2006 (06:55:48 PDT)-->
 
    <wsdl:message name="loginCmsRequest">
 
-      <wsdl:part element="tns1:loginCms" name="parameters"/>
+      <wsdl:part element="tns1:loginCms" name="parameters">
+
+      </wsdl:part>
 
    </wsdl:message>
 
    <wsdl:message name="LoginFault">
 
-      <wsdl:part element="impl:fault" name="fault"/>
+      <wsdl:part element="impl:fault" name="fault">
+
+      </wsdl:part>
 
    </wsdl:message>
 
    <wsdl:message name="loginCmsResponse">
 
-      <wsdl:part element="tns1:loginCmsResponse" name="parameters"/>
+      <wsdl:part element="tns1:loginCmsResponse" name="parameters">
+
+      </wsdl:part>
 
    </wsdl:message>
 
@@ -50,11 +56,17 @@ Built on Apr 22, 2006 (06:55:48 PDT)-->
 
       <wsdl:operation name="loginCms">
 
-         <wsdl:input message="impl:loginCmsRequest" name="loginCmsRequest"/>
+         <wsdl:input message="impl:loginCmsRequest" name="loginCmsRequest">
 
-         <wsdl:output message="impl:loginCmsResponse" name="loginCmsResponse"/>
+       </wsdl:input>
 
-         <wsdl:fault message="impl:LoginFault" name="LoginFault"/>
+         <wsdl:output message="impl:loginCmsResponse" name="loginCmsResponse">
+
+       </wsdl:output>
+
+         <wsdl:fault message="impl:LoginFault" name="LoginFault">
+
+       </wsdl:fault>
 
       </wsdl:operation>
 

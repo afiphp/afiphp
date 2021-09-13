@@ -9,12 +9,8 @@ beforeEach(function () {
 
     $salesPoints = $this->fe->getSalesPoints();
     $this->salesPoint = $salesPoints ? $salesPoints[0]->Nro : 0;
-});
 
-it('creates approved CAE from invoice', function () {
-    $nextInvoiceNumber = $this->fe->getLastNumber(InvoiceType::FACTURA_A, $this->salesPoint) + 1;
-
-    $invoice = Invoice::createProductInvoice(
+    $this->invoice = Invoice::createProductInvoice(
         InvoiceType::FACTURA_A,
         $this->salesPoint,
         150,
@@ -25,12 +21,36 @@ it('creates approved CAE from invoice', function () {
     )
     ->addTribute(99, 'Ingresos Brutos', 150, 5.2, 7.8)
     ->addTax(5, 150, 31.5);
+});
 
-    $cae = $this->fe->createCAEFromInvoice($invoice);
+it('creates approved CAE from invoice', function () {
+    $nextNumber = $this->fe->getLastNumber(InvoiceType::FACTURA_A, $this->salesPoint) + 1;
+
+    $cae = $this->fe->createCAEFromInvoice($this->invoice);
 
     expect($cae->isApproved())->toBeTrue();
-    expect($cae->getFromInvoiceNumber())->toBe($nextInvoiceNumber);
-    expect($cae->getToInvoiceNumber())->toBe($nextInvoiceNumber);
+    expect($cae->getInvoiceType())->toBe(InvoiceType::FACTURA_A);
+    expect($cae->getSalesPoint())->toBe($this->salesPoint);
+    expect($cae->getFromInvoiceNumber())->toBe($nextNumber);
+    expect($cae->getToInvoiceNumber())->toBe($nextNumber);
+    expect($cae->getNumber())->not()->toBeNull();
+    expect($cae->getDueDate())->not()->toBeNull();
+});
+
+it('creates approved CAE from credit note', function () {
+    $nextNumber = $this->fe->getLastNumber(InvoiceType::NOTA_CREDITO_A, $this->salesPoint) + 1;
+
+    $creditNote = $this->invoice
+        ->withType(InvoiceType::NOTA_CREDITO_A)
+        ->addRelatedInvoice(InvoiceType::FACTURA_A, 2, 50);
+
+    $cae = $this->fe->createCAEFromInvoice($creditNote);
+
+    expect($cae->isApproved())->toBeTrue();
+    expect($cae->getInvoiceType())->toBe(InvoiceType::NOTA_CREDITO_A);
+    expect($cae->getSalesPoint())->toBe($this->salesPoint);
+    expect($cae->getFromInvoiceNumber())->toBe($nextNumber);
+    expect($cae->getToInvoiceNumber())->toBe($nextNumber);
     expect($cae->getNumber())->not()->toBeNull();
     expect($cae->getDueDate())->not()->toBeNull();
 });

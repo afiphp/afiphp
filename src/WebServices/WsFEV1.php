@@ -28,22 +28,11 @@ class WsFEV1 extends WsAfip
         return WsAfip::WSFEV1;
     }
 
-    public function getWsdl(): string
-    {
-        if ($this->sandbox) {
-            return __DIR__ . '/wsdl/sandbox/wsfev1.wsdl';
-        }
-
-        return __DIR__ . '/wsdl/production/wsfev1.wsdl';
-    }
-
     public function getUrl(): string
     {
-        if ($this->sandbox) {
-            return 'https://wswhomo.afip.gov.ar/wsfev1/service.asmx';
-        }
-
-        return 'https://servicios1.afip.gov.ar/wsfev1/service.asmx';
+        return $this->sandbox
+            ? 'https://wswhomo.afip.gov.ar/wsfev1/service.asmx'
+            : 'https://servicios1.afip.gov.ar/wsfev1/service.asmx';
     }
 
     protected function execute(string $method, array $params = []): object
@@ -144,16 +133,21 @@ class WsFEV1 extends WsAfip
      */
     public function createCAE(array $data): array
     {
-        $response = $this->execute('FECAESolicitar', $data)->FeDetResp->FECAEDetResponse;
+        $response = $this->execute('FECAESolicitar', $data);
 
-        return array_map(fn($r) => new CAE(
-            $r->Resultado,
-            $r->CbteDesde,
-            $r->CbteHasta,
-            $r->CAE ?: null,
-            $r->CAEFchVto ? DateTime::createFromFormat('Ymd', $r->CAEFchVto) : null,
-            array_map(fn($observation) => "({$observation->Code}) {$observation->Msg}", $r->Observaciones->Obs ?? [])
-        ), $response);
+        $type = (int)$response->FeCabResp->CbteTipo;
+        $salesPoint = (int)$response->FeCabResp->PtoVta;
+
+        return array_map(fn($detail) => new CAE(
+            $detail->Resultado,
+            $type,
+            $salesPoint,
+            (int)$detail->CbteDesde,
+            (int)$detail->CbteHasta,
+            $detail->CAE ?: null,
+            $detail->CAEFchVto ? DateTime::createFromFormat('Ymd', $detail->CAEFchVto) : null,
+            array_map(fn($observation) => "({$observation->Code}) {$observation->Msg}", $detail->Observaciones->Obs ?? [])
+        ), $response->FeDetResp->FECAEDetResponse);
     }
 
     /**

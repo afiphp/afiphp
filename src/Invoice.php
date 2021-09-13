@@ -140,6 +140,22 @@ class Invoice implements Invoiceable
         );
     }
 
+    public function withNumber(int $number): self
+    {
+        $invoice = clone $this;
+        $invoice->number = $number;
+
+        return $invoice;
+    }
+
+    public function withType(int $type): self
+    {
+        $invoice = clone $this;
+        $invoice->type = $type;
+
+        return $invoice;
+    }
+
     public function toAfipService(string $serviceName): array
     {
         $details = [
@@ -188,13 +204,23 @@ class Invoice implements Invoiceable
         }
 
         if ($this->relatedInvoices) {
-            $details['CbtesAsoc'] = array_map(fn($relatedInvoice) => [
-                'Tipo' => $relatedInvoice->invoiceType,
-                'PtoVta' => $relatedInvoice->salesPoint,
-                'Nro' => $relatedInvoice->number,
-                'Cuit' => $relatedInvoice->cuit ?? '',
-                'CbteFch' => $relatedInvoice->date ? DateTime::createFromFormat('Ymd', $relatedInvoice->date) : '',
-            ], $this->relatedInvoices);
+            $details['CbtesAsoc'] = array_map(function ($relatedInvoice) {
+                $data = [
+                    'Tipo' => $relatedInvoice->invoiceType,
+                    'PtoVta' => $relatedInvoice->salesPoint,
+                    'Nro' => $relatedInvoice->number,
+                ];
+
+                if ($relatedInvoice->cuit) {
+                    $data['Cuit'] = $relatedInvoice->cuit;
+                }
+
+                if ($relatedInvoice->date) {
+                    $data['CbteFch'] = DateTime::createFromFormat('Ymd', $relatedInvoice->date);
+                }
+
+                return $data;
+            }, $this->relatedInvoices);
         }
 
         return [

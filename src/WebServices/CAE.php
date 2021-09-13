@@ -7,6 +7,8 @@ use DateTime;
 class CAE
 {
     protected string $result;
+    protected int $invoiceType;
+    protected int $salesPoint;
     protected int $fromInvoiceNumber;
     protected int $toInvoiceNumber;
     protected ?string $number;
@@ -15,6 +17,8 @@ class CAE
 
     public function __construct(
         string $result,
+        int $invoiceType,
+        int $salesPoint,
         int $fromInvoiceNumber,
         int $toInvoiceNumber,
         ?string $number,
@@ -22,6 +26,8 @@ class CAE
         array $observations = []
     ) {
         $this->result = $result;
+        $this->invoiceType = $invoiceType;
+        $this->salesPoint = $salesPoint;
         $this->fromInvoiceNumber = $fromInvoiceNumber;
         $this->toInvoiceNumber = $toInvoiceNumber;
         $this->number = $number;
@@ -32,6 +38,16 @@ class CAE
     public function getResult(): string
     {
         return $this->result;
+    }
+
+    public function getInvoiceType(): ?int
+    {
+        return $this->invoiceType;
+    }
+
+    public function getSalesPoint(): ?int
+    {
+        return $this->salesPoint;
     }
 
     public function getFromInvoiceNumber(): ?int

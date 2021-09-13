@@ -12,22 +12,11 @@ class WsAA extends WsAfip
         return WsAfip::WSAA;
     }
 
-    public function getWsdl(): string
-    {
-        if ($this->sandbox) {
-            return __DIR__ . '/wsdl/sandbox/wsaa.wsdl';
-        }
-
-        return __DIR__ . '/wsdl/production/wsaa.wsdl';
-    }
-
     public function getUrl(): string
     {
-        if ($this->sandbox) {
-            return 'https://wsaahomo.afip.gov.ar/ws/services/LoginCms';
-        }
-
-        return 'https://wsaa.afip.gov.ar/ws/services/LoginCms';
+        return $this->sandbox 
+            ? 'https://wsaahomo.afip.gov.ar/ws/services/LoginCms'
+            : 'https://wsaa.afip.gov.ar/ws/services/LoginCms';
     }
 
     protected function getTraFilename(string $serviceName): string
