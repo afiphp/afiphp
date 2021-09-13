@@ -4,31 +4,47 @@ namespace Afiphp\WebServices;
 
 use SimpleXMLElement;
 use Exception;
+use Afiphp\WebServices\Dtos\Credentials;
 
 class WsAA extends WsAfip
 {
+    /**
+     * @inheritDoc
+     */
     public function getServiceName(): string
     {
         return WsAfip::WSAA;
     }
 
+    /**
+     * @inheritDoc
+     */
     public function getUrl(): string
     {
-        return $this->sandbox 
+        return $this->isSandbox 
             ? 'https://wsaahomo.afip.gov.ar/ws/services/LoginCms'
             : 'https://wsaa.afip.gov.ar/ws/services/LoginCms';
     }
 
+    /**
+     * Get TRA filename
+     */
     protected function getTraFilename(string $serviceName): string
     {
         return "{$this->xmlPath}{$this->cuit}-{$serviceName}-tra.xml";
     }
 
+    /**
+     * Get TA filename
+     */
     protected function getTaFilename(string $serviceName): string
     {
         return "{$this->xmlPath}{$this->cuit}-{$serviceName}-ta.xml";
     }
 
+    /**
+     * Create TRA
+     */
     protected function createTra(string $serviceName): string
     {
         $traFilename = $this->getTraFilename($serviceName);
@@ -49,6 +65,9 @@ class WsAA extends WsAfip
         return $traFilename;
     }
 
+    /**
+     * Sign TRA
+     */
     protected function signTra(string $traFilename): string
     {
         $outputPath = "{$traFilename}.tmp";
@@ -83,6 +102,9 @@ class WsAA extends WsAfip
         return $cms;
     }
 
+    /**
+     * Get login
+     */
     protected function getLogin(string $cms): string
     {
         $response = $this->execute('loginCms', ['in0' => $cms]);
@@ -90,6 +112,9 @@ class WsAA extends WsAfip
         return $response->loginCmsReturn;
     }
 
+    /**
+     * Create TA
+     */
     protected function createTa(string $serviceName): string
     {
         $login = $this->getLogin(
@@ -104,6 +129,9 @@ class WsAA extends WsAfip
         return $taFilename;
     }
 
+    /**
+     * Get credentials for service
+     */
     public function getCredentialsFor(string $serviceName): Credentials
     {
         $taFilename = $this->getTaFilename($serviceName);

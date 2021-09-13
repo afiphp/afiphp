@@ -3,6 +3,9 @@
 namespace Afiphp\WebServices;
 
 use DateTime;
+use Afiphp\WebServices\Dtos\ServerStatus;
+use Afiphp\WebServices\Dtos\SalesPoint;
+use Afiphp\WebServices\Dtos\CAE;
 use Afiphp\WebServices\Contracts\Invoiceable;
 
 class WsFEV1 extends WsAfip
@@ -23,38 +26,41 @@ class WsFEV1 extends WsAfip
         $this->wsaa = new WsAA($cuit, $paths, $passphrase, $sandbox);
     }
 
+    /**
+     * @inheritDoc
+     */
     public function getServiceName(): string
     {
         return WsAfip::WSFEV1;
     }
 
+    /**
+     * @inheritDoc
+     */
     public function getUrl(): string
     {
-        return $this->sandbox
+        return $this->isSandbox
             ? 'https://wswhomo.afip.gov.ar/wsfev1/service.asmx'
             : 'https://servicios1.afip.gov.ar/wsfev1/service.asmx';
     }
 
-    protected function execute(string $method, array $params = []): object
-    {
-        $credentials = $this->wsaa->getCredentialsFor(WsAfip::WSFEV1);
-
-        $params['Auth'] = [
-            'Token' => $credentials->getToken(),
-            'Sign' 	=> $credentials->getSign(),
-            'Cuit' 	=> $this->cuit,
-        ];
-
-        return parent::execute($method, $params);
-    }
-
-    public function getServerStatus(): object
+    /**
+     * Get server status
+     */
+    public function getServerStatus(): ServerStatus
     {
         $response = $this->execute('FEDummy');
 
-        return $response;
+        return new ServerStatus(
+            $response->AppServer === 'OK',
+            $response->DbServer === 'OK',
+            $response->AuthServer === 'OK'
+        );
     }
 
+    /**
+     * Get last number
+     */
     public function getLastNumber(int $invoiceType, int $salesPoint): int
     {
         $response = $this->execute('FECompUltimoAutorizado', [
@@ -65,49 +71,19 @@ class WsFEV1 extends WsAfip
         return (int)$response->CbteNro;
     }
 
+    /**
+     * Get sales points
+     *
+     * @return SalesPoint[]
+     */
     public function getSalesPoints(): array
     {
-        return $this->execute('FEParamGetPtosVenta')->PtoVenta;
-    }
-
-    public function getInvoiceTypes(): array
-    {
-        return $this->execute('FEParamGetTiposCbte')->CbteTipo;
-    }
-
-    public function getConceptTypes(): array
-    {
-        return $this->execute('FEParamGetTiposConcepto')->ConceptoTipo;
-    }
-
-    public function getDocumentTypes(): array
-    {
-        return $this->execute('FEParamGetTiposDoc')->DocTipo;
-    }
-
-    public function getAliquotTypes(): array
-    {
-        return $this->execute('FEParamGetTiposIva')->IvaTipo;
-    }
-
-    public function getCurrenciesTypes(): array
-    {
-        return $this->execute('FEParamGetTiposMonedas')->Moneda;
-    }
-
-    public function getOptionsTypes(): array
-    {
-        return $this->execute('FEParamGetTiposOpcional')->OpcionalTipo;
-    }
-
-    /**
-     * Get tax types
-     *
-     * @return array
-     */
-    public function getTaxTypes(): array
-    {
-        return $this->execute('FEParamGetTiposTributos')->TributoTipo;
+        return array_map(fn($salesPoint) => new SalesPoint(
+            $salesPoint->Nro,
+            $salesPoint->EmisionTipo,
+            $salesPoint->Bloqueado === 'S',
+            $salesPoint->FchBaja === 'NULL' ? null : DateTime::createFromFormat('Ymd', $salesPoint->FchBaja),
+        ), $this->execute('FEParamGetPtosVenta')->PtoVenta);
     }
 
     /**
@@ -115,7 +91,7 @@ class WsFEV1 extends WsAfip
      *
      * @return object
      */
-    public function getInvoice(int $documentType, int $salesPoint, int $number): object
+    public function getInvoiceData(int $documentType, int $salesPoint, int $number): object
     {
         return $this->execute('FECompConsultar', [
             'FeCompConsReq' => [
@@ -124,6 +100,31 @@ class WsFEV1 extends WsAfip
                 'CbteNro' => $number,
             ],
         ]);
+    }
+
+    /**
+     * Get CAE
+     */
+    public function getCAE(int $documentType, int $salesPoint, int $number): CAE
+    {
+        $response = $this->execute('FECompConsultar', [
+            'FeCompConsReq' => [
+                'CbteTipo' => $documentType,
+                'PtoVta' => $salesPoint,
+                'CbteNro' => $number,
+            ],
+        ]);
+
+        return new CAE(
+            $response->Resultado,
+            (int)$response->CbteTipo,
+            (int)$response->PtoVta,
+            (int)$response->CbteDesde,
+            (int)$response->CbteHasta,
+            $response->CodAutorizacion,
+            DateTime::createFromFormat('Ymd', $response->FchVto),
+            array_map(fn($observation) => "({$observation->Code}) {$observation->Msg}", $response->Observaciones->Obs ?? [])
+        );
     }
 
     /**
@@ -167,5 +168,21 @@ class WsFEV1 extends WsAfip
         }
 
         return $this->createCAE($data)[0];
+    }
+
+    /**
+     * @inheritDoc 
+     */
+    protected function execute(string $method, array $params = []): object
+    {
+        $credentials = $this->wsaa->getCredentialsFor(WsAfip::WSFEV1);
+
+        $params['Auth'] = [
+            'Token' => $credentials->getToken(),
+            'Sign' 	=> $credentials->getSign(),
+            'Cuit' 	=> $this->cuit,
+        ];
+
+        return parent::execute($method, $params);
     }
 }

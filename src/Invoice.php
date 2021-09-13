@@ -60,16 +60,41 @@ class Invoice implements Invoiceable
         $this->paymentDueDate = $paymentDueDate;
     }
 
+    /**
+     * Get taxes
+     */
     public function getTaxes(): array
     {
         return $this->taxes;
     }
 
+    /**
+     * Get tributes
+     */
     public function getTributes(): array
     {
         return $this->tributes;
     }
 
+    /**
+     * Get optionals
+     */
+    public function getOptionals(): array
+    {
+        return $this->optionals;
+    }
+
+    /**
+     * Get related invoices
+     */
+    public function getRelatedInvoices(): array
+    {
+        return $this->relatedInvoices;
+    }
+
+    /**
+     * Add tax
+     */
     public function addTax(int $code, float $taxableBase, float $amount): self
     {
         $this->taxes[] = (object)[
@@ -81,6 +106,9 @@ class Invoice implements Invoiceable
         return $this;
     }
 
+    /**
+     * Add tribute
+     */
     public function addTribute(int $code, string $description, float $taxableBase, float $aliquot, float $amount): self
     {
         $this->tributes[] = (object)[
@@ -94,6 +122,9 @@ class Invoice implements Invoiceable
         return $this;
     }
 
+    /**
+     * Add optional
+     */
     public function addOptional(string $code, string $value): self
     {
         $this->optionals[] = (object)[
@@ -104,6 +135,9 @@ class Invoice implements Invoiceable
         return $this;
     }
 
+    /**
+     * Add related invoice
+     */
     public function addRelatedInvoice(int $invoiceType, int $salesPoint, int $number, string $cuit = null, DateTime $date = null): self
     {
         $this->relatedInvoices[] = (object)[
@@ -117,11 +151,17 @@ class Invoice implements Invoiceable
         return $this;
     }
 
+    /**
+     * Get total amount
+     */
     public function getTotalAmount(): float
     {
         return $this->untaxedAmount + $this->taxedAmount + $this->exemptAmount + $this->getTotalTaxes() + $this->getTotalTributes();
     }
 
+    /**
+     * Get total taxes
+     */
     public function getTotalTaxes(): float
     {
         return (float)array_reduce(
@@ -131,6 +171,9 @@ class Invoice implements Invoiceable
         );
     }
 
+    /**
+     * Get total tributes
+     */
     public function getTotalTributes(): float
     {
         return (float)array_reduce(
@@ -140,6 +183,9 @@ class Invoice implements Invoiceable
         );
     }
 
+    /**
+     * Create a copy of this invoice with different number
+     */
     public function withNumber(int $number): self
     {
         $invoice = clone $this;
@@ -148,6 +194,9 @@ class Invoice implements Invoiceable
         return $invoice;
     }
 
+    /**
+     * Create a copy of this invoice with different type
+     */
     public function withType(int $type): self
     {
         $invoice = clone $this;
@@ -156,6 +205,114 @@ class Invoice implements Invoiceable
         return $invoice;
     }
 
+    /**
+     * Create a new product invoice
+     */
+    public static function createProductInvoice(
+        int $type,
+        int $salesPoint,
+        float $taxedAmount,
+        float $untaxedAmount,
+        float $exemptAmount,
+        int $customerDocumentType,
+        string $customerDocumentNumber,
+        DateTime $date = null,
+        string $currencyType = 'PES',
+        float $currencyRate = 1
+    ): self {
+        return new static(
+            $type,
+            $salesPoint,
+            $taxedAmount,
+            $untaxedAmount,
+            $exemptAmount,
+            $customerDocumentType,
+            $customerDocumentNumber,
+            $date,
+            1,
+            null,
+            null,
+            null,
+            $currencyType,
+            $currencyRate,
+        );
+    }
+
+    /**
+     * Create a new service invoice
+     */
+    public static function createServiceInvoice(
+        int $type,
+        int $salesPoint,
+        float $taxedAmount,
+        float $untaxedAmount,
+        float $exemptAmount,
+        int $customerDocumentType,
+        string $customerDocumentNumber,
+        DateTime $serviceFromDate,
+        DateTime $serviceToDate,
+        DateTime $paymentDueDate,
+        DateTime $date = null,
+        string $currencyType = 'PES',
+        float $currencyRate = 1
+    ): self {
+        return new static(
+            $type,
+            $salesPoint,
+            $taxedAmount,
+            $untaxedAmount,
+            $exemptAmount,
+            $customerDocumentType,
+            $customerDocumentNumber,
+            $date,
+            2,
+            $serviceFromDate,
+            $serviceToDate,
+            $paymentDueDate,
+            $currencyType,
+            $currencyRate
+        );
+    }
+
+    /**
+     * Create an invoice from AFIP service data 
+     */
+    public static function createFromAfipService(string $serviceName, object $data): self
+    {
+        $invoice = new static(
+            (int)$data->CbteTipo,
+            (int)$data->PtoVta,
+            (float)$data->ImpNeto,
+            (float)$data->ImpTotConc,
+            (float)$data->ImpOpEx,
+            (int)$data->DocTipo,
+            $data->DocNro,
+            DateTime::createFromFormat('Ymd', $data->CbteFch),
+            (int)$data->Concepto,
+            $data->FchServDesde ? DateTime::createFromFormat('Ymd', $data->FchServDesde) : null,
+            $data->FchServHasta ? DateTime::createFromFormat('Ymd', $data->FchServHasta) : null,
+            $data->FchVtoPago ? DateTime::createFromFormat('Ymd', $data->FchVtoPago) : null,
+            $data->MonId,
+            (float)$data->MonCotiz
+        );
+
+        $invoice->number = $data->CbteDesde;
+
+        array_walk(
+            $data->Iva->AlicIva ?? [],
+            fn($tax) => $invoice->addTax(
+                $tax->Id,
+                $tax->BaseImp,
+                $tax->Importe
+            )
+        );
+
+        return $invoice;
+    }
+
+    /**
+     * @inheritDoc
+     */
     public function toAfipService(string $serviceName): array
     {
         $details = [
@@ -235,101 +392,5 @@ class Invoice implements Invoiceable
                 ],
             ],
         ];
-    }
-
-    public static function createProductInvoice(
-        int $type,
-        int $salesPoint,
-        float $taxedAmount,
-        float $untaxedAmount,
-        float $exemptAmount,
-        int $customerDocumentType,
-        string $customerDocumentNumber,
-        DateTime $date = null,
-        string $currencyType = 'PES',
-        float $currencyRate = 1
-    ): self {
-        return new static(
-            $type,
-            $salesPoint,
-            $taxedAmount,
-            $untaxedAmount,
-            $exemptAmount,
-            $customerDocumentType,
-            $customerDocumentNumber,
-            $date,
-            1,
-            null,
-            null,
-            null,
-            $currencyType,
-            $currencyRate,
-        );
-    }
-
-    public static function createServiceInvoice(
-        int $type,
-        int $salesPoint,
-        float $taxedAmount,
-        float $untaxedAmount,
-        float $exemptAmount,
-        int $customerDocumentType,
-        string $customerDocumentNumber,
-        DateTime $serviceFromDate,
-        DateTime $serviceToDate,
-        DateTime $paymentDueDate,
-        DateTime $date = null,
-        string $currencyType = 'PES',
-        float $currencyRate = 1
-    ): self {
-        return new static(
-            $type,
-            $salesPoint,
-            $taxedAmount,
-            $untaxedAmount,
-            $exemptAmount,
-            $customerDocumentType,
-            $customerDocumentNumber,
-            $date,
-            2,
-            $serviceFromDate,
-            $serviceToDate,
-            $paymentDueDate,
-            $currencyType,
-            $currencyRate
-        );
-    }
-
-    public static function createFromAfipService(string $serviceName, object $data): self
-    {
-        $invoice = new static(
-            (int)$data->CbteTipo,
-            (int)$data->PtoVta,
-            (float)$data->ImpNeto,
-            (float)$data->ImpTotConc,
-            (float)$data->ImpOpEx,
-            (int)$data->DocTipo,
-            $data->DocNro,
-            DateTime::createFromFormat('Ymd', $data->CbteFch),
-            (int)$data->Concepto,
-            $data->FchServDesde ? DateTime::createFromFormat('Ymd', $data->FchServDesde) : null,
-            $data->FchServHasta ? DateTime::createFromFormat('Ymd', $data->FchServHasta) : null,
-            $data->FchVtoPago ? DateTime::createFromFormat('Ymd', $data->FchVtoPago) : null,
-            $data->MonId,
-            (float)$data->MonCotiz
-        );
-
-        $invoice->number = $data->CbteDesde;
-
-        array_walk(
-            $data->Iva->AlicIva ?? [],
-            fn($tax) => $invoice->addTax(
-                $tax->Id,
-                $tax->BaseImp,
-                $tax->Importe
-            )
-        );
-
-        return $invoice;
     }
 }

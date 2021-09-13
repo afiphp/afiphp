@@ -2,7 +2,6 @@
 
 namespace Afiphp\WebServices;
 
-use stdClass;
 use SoapClient;
 use Exception;
 use Afiphp\Exceptions\WsException;
@@ -13,14 +12,21 @@ abstract class WsAfip
     const WSAA = 'wsaa';
 
     protected string $cuit;
-    protected bool $sandbox;
+    protected bool $isSandbox;
     protected string $certificateFilename;
     protected string $privateKeyFilename;
     protected string $xmlPath;
     protected string $passphrase;
     protected SoapClient $client;
 
+    /**
+     * Get service name
+     */
     public abstract function getServiceName(): string;
+
+    /**
+     * Get URL
+     */
     public abstract function getUrl(): string;
 
     /**
@@ -38,7 +44,7 @@ abstract class WsAfip
         bool $sandbox = true
     ) {
         $this->cuit = $cuit;
-        $this->sandbox = $sandbox;
+        $this->isSandbox = $sandbox;
         $this->passphrase = $passphrase;
 
         if (is_array($paths)) {
@@ -74,11 +80,10 @@ abstract class WsAfip
         $this->client = new SoapClient($this->getWsdl(), [
             'soap_version' => SOAP_1_2,
             'location' => $this->getUrl(),
-            'trace' => 1,
-            'exceptions' => 0,
+            'trace' => true,
+            'exceptions' => false,
             'stream_context' => stream_context_create([
                 'ssl' => [
-                    'ciphers'=> 'AES256-SHA',
                     'verify_peer' => false,
                     'verify_peer_name' => false,
                     'allow_self_signed' => true,
@@ -88,42 +93,66 @@ abstract class WsAfip
         ]);
     }
 
+    /**
+     * Get Wsdl
+     */
     public function getWsdl(): string
     {
-        $suffix = $this->sandbox ? '-sandbox' : '';
+        $suffix = $this->isSandbox ? '-sandbox' : '';
         return __DIR__ . "/wsdl/{$this->getServiceName()}{$suffix}.xml";
     }
 
+    /**
+     * Get CUIT
+     */
     public function getCuit(): string
     {
         return $this->cuit;
     }
 
+    /**
+     * Set CUIT
+     */
     public function setCuit(string $value): void
     {
         $this->cuit = $value;
     }
 
-    public function getSandbox(): bool
+    /**
+     * Is sandbox
+     */
+    public function isSandbox(): bool
     {
-        return $this->sandbox;
+        return $this->isSandbox;
     }
 
+    /**
+     * Get certificate filename
+     */
     public function getCertificateFilename(): string
     {
         return $this->certificateFilename;
     }
 
+    /**
+     * Get private key filename
+     */
     public function getPrivateKeyFilename(): string
     {
         return $this->privateKeyFilename;
     }
 
+    /**
+     * Get path
+     */
     protected function getPath(string $filename): string
     {
         return "{$this->xmlPath}{$this->cuit}-{$this->getServiceName()}-{$filename}";
     }
 
+    /**
+     * Log
+     */
     protected function log(string $method): void
     {
         $now = date('YmdHis');
@@ -132,6 +161,9 @@ abstract class WsAfip
         file_put_contents($this->getPath("{$method}-response-{$now}.xml"), $this->client->__getLastRequest());
     }
 
+    /**
+     * Execute
+     */
     protected function execute(string $method, array $params = []): object
     {
         $response = $this->client->{$method}($params);

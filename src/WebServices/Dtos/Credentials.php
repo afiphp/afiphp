@@ -1,6 +1,6 @@
 <?php
 
-namespace Afiphp\WebServices;
+namespace Afiphp\WebServices\Dtos;
 
 class Credentials
 {
