@@ -9,7 +9,6 @@ use Afiphp\Cae;
 
 beforeEach(function () {
     $this->wsfe = new WsFev1('20920808582', __DIR__ . '/resources');
-
     $this->invoice = Invoice::createProductInvoice(InvoiceType::FACTURA_A, 2, 150, 0, 0 , new Customer(80, '20111111112'))
         ->addTribute(99, 'Ingresos Brutos', 150, 5.2, 7.8)
         ->addTax(5, 150, 31.5);
@@ -83,10 +82,10 @@ it('can be converted to AFIP service data', function () {
 });
 
 it('creates approved CAE from invoice', function () {
-    $nextNumber = $this->wsfe->getLastNumber(InvoiceType::FACTURA_A, 2) + 1;
-    
+    $nextNumber = $this->wsfe->getLastAuthorizedInvoiceNumber(InvoiceType::FACTURA_A, 2) + 1;
+
     /** @var Cae */
-    $cae = $this->wsfe->createCAEFromInvoice($this->invoice);
+    $cae = $this->wsfe->getAuthorizationForInvoice($this->invoice);
 
     expect($cae->isApproved())->toBeTrue();
     expect($cae->getInvoiceType())->toBe(InvoiceType::FACTURA_A);
@@ -98,7 +97,7 @@ it('creates approved CAE from invoice', function () {
 });
 
 it('creates approved CAE from credit note', function () {
-    $nextCreditNoteNumber = $this->wsfe->getLastNumber(InvoiceType::NOTA_CREDITO_A, 2) + 1;
+    $nextCreditNoteNumber = $this->wsfe->getLastAuthorizedInvoiceNumber(InvoiceType::NOTA_CREDITO_A, 2) + 1;
 
     /** @var Invoice */
     $creditNote = (clone $this->invoice)
@@ -106,7 +105,7 @@ it('creates approved CAE from credit note', function () {
         ->addRelatedInvoice(InvoiceType::FACTURA_A, 2, 50);
 
     /** @var Cae */
-    $cae = $this->wsfe->createCAEFromInvoice($creditNote);
+    $cae = $this->wsfe->getAuthorizationForInvoice($creditNote);
 
     expect($cae->isApproved())->toBeTrue();
     expect($cae->getInvoiceType())->toBe(InvoiceType::NOTA_CREDITO_A);
@@ -126,17 +125,4 @@ it('retrieves invoice', function () {
     expect($invoice->getNumber())->toBe(50);
     expect($invoice->getCae()->getNumber())->toBe('71372966559657');
     expect($invoice->getCae()->isApproved())->toBeTrue();
-});
-
-it('retrieves CAE', function () {
-    /** @var Cae */
-    $cae = $this->wsfe->getCAE(InvoiceType::FACTURA_A, 2, 50);
-
-    expect($cae->isApproved())->toBeTrue();
-    expect($cae->getInvoiceType())->toBe(InvoiceType::FACTURA_A);
-    expect($cae->getSalesPoint())->toBe(2);
-    expect($cae->getFirstInvoiceNumber())->toBe(50);
-    expect($cae->getLastInvoiceNumber())->toBe(50);
-    expect($cae->getNumber())->not()->toBeNull();
-    expect($cae->getDueDate())->not()->toBeNull();
 });

@@ -61,9 +61,9 @@ class WsFev1 extends WsAfip
     }
 
     /**
-     * Get last number
+     * Get last authorized invoice number
      */
-    public function getLastNumber(int $invoiceType, int $salesPoint): int
+    public function getLastAuthorizedInvoiceNumber(int $invoiceType, int $salesPoint): int
     {
         $response = $this->execute('FECompUltimoAutorizado', [
             'CbteTipo' => $invoiceType,
@@ -118,36 +118,18 @@ class WsFev1 extends WsAfip
 
     /**
      * Get CAE
-     */
-    public function getCAE(int $documentType, int $salesPoint, int $number): Cae
-    {
-        $response = $this->execute('FECompConsultar', [
-            'FeCompConsReq' => [
-                'CbteTipo' => $documentType,
-                'PtoVta' => $salesPoint,
-                'CbteNro' => $number,
-            ],
-        ]);
-
-        return new Cae(
-            $response->Resultado,
-            (int)$response->CbteTipo,
-            (int)$response->PtoVta,
-            (int)$response->CbteDesde,
-            (int)$response->CbteHasta,
-            $response->CodAutorizacion,
-            DateTime::createFromFormat('Ymd', $response->FchVto),
-            array_map(fn($observation) => "({$observation->Code}) {$observation->Msg}", $response->Observaciones->Obs ?? [])
-        );
-    }
-
-    /**
-     * Create CAE
      * 
      * @return Cae[]
      */
-    public function createCAE(array $data): array
+    public function getAuthorization(array $data): array
     {
+        if ($data['FeCAEReq']['FeDetReq']['FECAEDetRequest']['CbteDesde'] === null) {
+            $nextNumber = $this->getLastAuthorizedInvoiceNumber($data['FeCAEReq']['FeCabReq']['CbteTipo'], $data['FeCAEReq']['FeCabReq']['PtoVta']) + 1;
+
+            $data['FeCAEReq']['FeDetReq']['FECAEDetRequest']['CbteDesde'] = $nextNumber;
+            $data['FeCAEReq']['FeDetReq']['FECAEDetRequest']['CbteHasta'] = $nextNumber;
+        }
+
         $response = $this->execute('FECAESolicitar', $data);
 
         $type = (int)$response->FeCabResp->CbteTipo;
@@ -166,22 +148,15 @@ class WsFev1 extends WsAfip
     }
 
     /**
-     * Create CAE from invoice
+     * Get CAE from invoice
      *
      * @return Cae
      */
-    public function createCAEFromInvoice(Invoiceable $invoice): Cae
+    public function getAuthorizationForInvoice(Invoiceable $invoice): Cae
     {
         $data = $invoice->toAfipService($this->getServiceName());
 
-        if ($data['FeCAEReq']['FeDetReq']['FECAEDetRequest']['CbteDesde'] === null) {
-            $nextNumber = $this->getLastNumber($data['FeCAEReq']['FeCabReq']['CbteTipo'], $data['FeCAEReq']['FeCabReq']['PtoVta']) + 1;
-
-            $data['FeCAEReq']['FeDetReq']['FECAEDetRequest']['CbteDesde'] = $nextNumber;
-            $data['FeCAEReq']['FeDetReq']['FECAEDetRequest']['CbteHasta'] = $nextNumber;
-        }
-
-        return $this->createCAE($data)[0];
+        return $this->getAuthorization($data)[0];
     }
 
     /**
