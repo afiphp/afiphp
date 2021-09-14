@@ -132,7 +132,7 @@ class WsAa extends WsAfip
     /**
      * Get credentials for service
      */
-    public function getCredentialsForServce(string $serviceName): Credentials
+    public function getCredentialsForService(string $serviceName): Credentials
     {
         $taFilename = $this->getTaFilename($serviceName);
         $actualTime = $expirationTime = date('c');
@@ -157,6 +157,6 @@ class WsAa extends WsAfip
      */
     public function getCredentialsForWsFEV1(): Credentials
     {
-        return $this->getCredentialsForServce(WsAfip::WSFEV1);
+        return $this->getCredentialsForService(WsAfip::WSFEV1);
     }
 }
