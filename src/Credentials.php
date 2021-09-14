@@ -1,6 +1,6 @@
 <?php
 
-namespace Afiphp\WebServices\Dtos;
+namespace Afiphp;
 
 class Credentials
 {
@@ -13,11 +13,17 @@ class Credentials
         $this->token = $token;
     }
 
+    /**
+     * Get sign
+     */ 
     public function getSign(): string
     {
         return $this->sign;
     }
 
+    /**
+     * Get token
+     */ 
     public function getToken(): string
     {
         return $this->token;

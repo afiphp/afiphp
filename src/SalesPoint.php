@@ -1,6 +1,6 @@
 <?php
 
-namespace Afiphp\WebServices\Dtos;
+namespace Afiphp;
 
 use DateTime;
 
@@ -11,29 +11,45 @@ class SalesPoint
     protected bool $isLocked;
     protected ?DateTime $deletedAt;
 
-    public function __construct(string $number, string $type, bool $locked, ?DateTime $deletedAt)
+    public function __construct(
+        int $number,
+        string $type,
+        bool $isLocked,
+        DateTime $deletedAt = null)
     {
         $this->number = $number;
         $this->type = $type;
-        $this->isLocked = $locked;
+        $this->isLocked = $isLocked;
         $this->deletedAt = $deletedAt;
     }
 
+    /**
+     * Get number
+     */ 
     public function getNumber(): int
     {
         return $this->number;
     }
 
+    /**
+     * Get type
+     */ 
     public function getType(): string
     {
         return $this->type;
     }
 
+    /**
+     * Is locked?
+     */ 
     public function isLocked(): bool
     {
         return $this->isLocked;
     }
 
+    /**
+     * Get deletedAt
+     */ 
     public function getDeletedAt(): ?DateTime
     {
         return $this->deletedAt;

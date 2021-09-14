@@ -1,16 +1,16 @@
 <?php
 
-namespace Afiphp\WebServices\Dtos;
+namespace Afiphp;
 
 use DateTime;
 
-class CAE
+class Cae
 {
     protected string $result;
     protected int $invoiceType;
     protected int $salesPoint;
-    protected int $fromInvoiceNumber;
-    protected int $toInvoiceNumber;
+    protected int $firstInvoiceNumber;
+    protected int $lastInvoiceNumber;
     protected ?string $number;
     protected ?DateTime $dueDate;
     protected array $observations;
@@ -19,8 +19,8 @@ class CAE
         string $result,
         int $invoiceType,
         int $salesPoint,
-        int $fromInvoiceNumber,
-        int $toInvoiceNumber,
+        int $firstInvoiceNumber,
+        int $lastInvoiceNumber,
         ?string $number,
         ?DateTime $dueDate,
         array $observations = []
@@ -28,63 +28,98 @@ class CAE
         $this->result = $result;
         $this->invoiceType = $invoiceType;
         $this->salesPoint = $salesPoint;
-        $this->fromInvoiceNumber = $fromInvoiceNumber;
-        $this->toInvoiceNumber = $toInvoiceNumber;
+        $this->firstInvoiceNumber = $firstInvoiceNumber;
+        $this->lastInvoiceNumber = $lastInvoiceNumber;
         $this->number = $number;
         $this->dueDate = $dueDate;
         $this->observations = $observations;
     }
 
+    /**
+     * Get result
+     */ 
     public function getResult(): string
     {
         return $this->result;
     }
 
-    public function getInvoiceType(): ?int
+    /**
+     * Get invoice type
+     */ 
+    public function getInvoiceType(): int
     {
         return $this->invoiceType;
     }
 
-    public function getSalesPoint(): ?int
+    /**
+     * Get sales point
+     */ 
+    public function getSalesPoint(): int
     {
         return $this->salesPoint;
     }
 
-    public function getFromInvoiceNumber(): ?int
+    /**
+     * Get first invoice number
+     */ 
+    public function getFirstInvoiceNumber(): int
     {
-        return $this->fromInvoiceNumber;
+        return $this->firstInvoiceNumber;
     }
 
-    public function getToInvoiceNumber(): ?int
+    /**
+     * Get last invoice number
+     */ 
+    public function getLastInvoiceNumber(): int
     {
-        return $this->toInvoiceNumber;
+        return $this->lastInvoiceNumber;
     }
 
-    public function getNumber(): string
+    /**
+     * Get number
+     */ 
+    public function getNumber(): ?string
     {
         return $this->number;
     }
 
+    /**
+     * Get due date
+     */ 
     public function getDueDate(): ?DateTime
     {
         return $this->dueDate;
     }
-    
+
+    /**
+     * Get observations
+     *
+     * @return string[]
+     */
     public function getObservations(): array
     {
         return $this->observations;
     }
 
+    /**
+     * Is approved?
+     */
     public function isApproved(): bool
     {
         return $this->result === 'A';
     }
 
+    /**
+     * Is rejected?
+     */
     public function isRejected(): bool
     {
         return $this->result === 'R';
     }
 
+    /**
+     * Is partial?
+     */
     public function isPartial(): bool
     {
         return $this->result === 'P';

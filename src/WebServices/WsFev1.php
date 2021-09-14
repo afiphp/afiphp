@@ -3,12 +3,12 @@
 namespace Afiphp\WebServices;
 
 use DateTime;
-use Afiphp\WebServices\Dtos\ServerStatus;
-use Afiphp\WebServices\Dtos\SalesPoint;
-use Afiphp\WebServices\Dtos\CAE;
 use Afiphp\WebServices\Contracts\Invoiceable;
+use Afiphp\SalesPoint;
+use Afiphp\Invoice;
+use Afiphp\Cae;
 
-class WsFEV1 extends WsAfip
+class WsFev1 extends WsAfip
 {
     protected $wsaa;
 
@@ -19,11 +19,11 @@ class WsFEV1 extends WsAfip
         string $cuit,
         $paths,
         string $passphrase = '',
-        bool $sandbox = true
+        bool $isSandbox = true
     ) {
-        parent::__construct($cuit, $paths, $passphrase, $sandbox);
+        parent::__construct($cuit, $paths, $passphrase, $isSandbox);
 
-        $this->wsaa = new WsAA($cuit, $paths, $passphrase, $sandbox);
+        $this->wsaa = new WsAa($cuit, $paths, $passphrase, $isSandbox);
     }
 
     /**
@@ -37,7 +37,7 @@ class WsFEV1 extends WsAfip
     /**
      * @inheritDoc
      */
-    public function getUrl(): string
+    public function getSoapUrl(): string
     {
         return $this->isSandbox
             ? 'https://wswhomo.afip.gov.ar/wsfev1/service.asmx'
@@ -46,16 +46,18 @@ class WsFEV1 extends WsAfip
 
     /**
      * Get server status
+     *
+     * @return ServerStatus[]
      */
-    public function getServerStatus(): ServerStatus
+    public function getServerStatus(): array
     {
         $response = $this->execute('FEDummy');
 
-        return new ServerStatus(
-            $response->AppServer === 'OK',
-            $response->DbServer === 'OK',
-            $response->AuthServer === 'OK'
-        );
+        return [
+            'app' => $response->AppServer === 'OK',
+            'db' => $response->DbServer === 'OK',
+            'auth' => $response->AuthServer === 'OK',
+        ];
     }
 
     /**
@@ -87,7 +89,7 @@ class WsFEV1 extends WsAfip
     }
 
     /**
-     * Get invoice
+     * Get invoice data
      *
      * @return object
      */
@@ -103,9 +105,21 @@ class WsFEV1 extends WsAfip
     }
 
     /**
+     * Get invoice
+     *
+     * @return object
+     */
+    public function getInvoice(int $documentType, int $salesPoint, int $number): Invoice
+    {
+        $response = $this->getInvoiceData($documentType, $salesPoint, $number);
+
+        return Invoice::createFromAfipService($this->getServiceName(), $response);
+    }
+
+    /**
      * Get CAE
      */
-    public function getCAE(int $documentType, int $salesPoint, int $number): CAE
+    public function getCAE(int $documentType, int $salesPoint, int $number): Cae
     {
         $response = $this->execute('FECompConsultar', [
             'FeCompConsReq' => [
@@ -115,7 +129,7 @@ class WsFEV1 extends WsAfip
             ],
         ]);
 
-        return new CAE(
+        return new Cae(
             $response->Resultado,
             (int)$response->CbteTipo,
             (int)$response->PtoVta,
@@ -130,7 +144,7 @@ class WsFEV1 extends WsAfip
     /**
      * Create CAE
      * 
-     * @return CAE[]
+     * @return Cae[]
      */
     public function createCAE(array $data): array
     {
@@ -139,7 +153,7 @@ class WsFEV1 extends WsAfip
         $type = (int)$response->FeCabResp->CbteTipo;
         $salesPoint = (int)$response->FeCabResp->PtoVta;
 
-        return array_map(fn($detail) => new CAE(
+        return array_map(fn($detail) => new Cae(
             $detail->Resultado,
             $type,
             $salesPoint,
@@ -154,9 +168,9 @@ class WsFEV1 extends WsAfip
     /**
      * Create CAE from invoice
      *
-     * @return CAE
+     * @return Cae
      */
-    public function createCAEFromInvoice(Invoiceable $invoice): CAE
+    public function createCAEFromInvoice(Invoiceable $invoice): Cae
     {
         $data = $invoice->toAfipService($this->getServiceName());
 
@@ -175,7 +189,7 @@ class WsFEV1 extends WsAfip
      */
     protected function execute(string $method, array $params = []): object
     {
-        $credentials = $this->wsaa->getCredentialsFor(WsAfip::WSFEV1);
+        $credentials = $this->wsaa->getCredentialsForWsFEV1();
 
         $params['Auth'] = [
             'Token' => $credentials->getToken(),

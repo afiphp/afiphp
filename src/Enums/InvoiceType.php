@@ -1,6 +1,6 @@
 <?php
 
-namespace Afiphp;
+namespace Afiphp\Enums;
 
 abstract class InvoiceType
 {

@@ -17,7 +17,7 @@ abstract class WsAfip
     protected string $privateKeyFilename;
     protected string $xmlPath;
     protected string $passphrase;
-    protected SoapClient $client;
+    protected SoapClient $soapClient;
 
     /**
      * Get service name
@@ -27,7 +27,7 @@ abstract class WsAfip
     /**
      * Get URL
      */
-    public abstract function getUrl(): string;
+    public abstract function getSoapUrl(): string;
 
     /**
      * Web Service Afip
@@ -35,16 +35,16 @@ abstract class WsAfip
      * @param string $cuit
      * @param string|array $paths
      * @param string $passphrase
-     * @param boolean $sandbox
+     * @param boolean $isSandbox
      */
     public function __construct(
         string $cuit,
         $paths,
         string $passphrase = '',
-        bool $sandbox = true
+        bool $isSandbox = true
     ) {
         $this->cuit = $cuit;
-        $this->isSandbox = $sandbox;
+        $this->isSandbox = $isSandbox;
         $this->passphrase = $passphrase;
 
         if (is_array($paths)) {
@@ -77,13 +77,14 @@ abstract class WsAfip
             throw new Exception("Unable to open {$this->privateKeyFilename}");
         }
 
-        $this->client = new SoapClient($this->getWsdl(), [
+        $this->soapClient = new SoapClient($this->getWsdlFilename(), [
             'soap_version' => SOAP_1_2,
-            'location' => $this->getUrl(),
+            'location' => $this->getSoapUrl(),
             'trace' => true,
             'exceptions' => false,
             'stream_context' => stream_context_create([
                 'ssl' => [
+                    'ciphers' => 'AES256-SHA',
                     'verify_peer' => false,
                     'verify_peer_name' => false,
                     'allow_self_signed' => true,
@@ -94,36 +95,28 @@ abstract class WsAfip
     }
 
     /**
-     * Get Wsdl
-     */
-    public function getWsdl(): string
-    {
-        $suffix = $this->isSandbox ? '-sandbox' : '';
-        return __DIR__ . "/wsdl/{$this->getServiceName()}{$suffix}.xml";
-    }
-
-    /**
      * Get CUIT
-     */
+     */ 
     public function getCuit(): string
     {
         return $this->cuit;
     }
 
     /**
-     * Set CUIT
-     */
-    public function setCuit(string $value): void
-    {
-        $this->cuit = $value;
-    }
-
-    /**
-     * Is sandbox
-     */
+     * Get is sandbox
+     */ 
     public function isSandbox(): bool
     {
         return $this->isSandbox;
+    }
+
+    /**
+     * Get Wsdl filename
+     */
+    public function getWsdlFilename(): string
+    {
+        $suffix = $this->isSandbox ? '-sandbox' : '';
+        return __DIR__ . "/Wsdl/{$this->getServiceName()}{$suffix}.xml";
     }
 
     /**
@@ -151,14 +144,14 @@ abstract class WsAfip
     }
 
     /**
-     * Log
+     * Log request and response
      */
-    protected function log(string $method): void
+    protected function saveRequestAndResponse(string $method): void
     {
         $now = date('YmdHis');
 
-        file_put_contents($this->getPath("{$method}-request-{$now}.xml"), $this->client->__getLastRequest());
-        file_put_contents($this->getPath("{$method}-response-{$now}.xml"), $this->client->__getLastRequest());
+        file_put_contents($this->getPath("{$method}-request-{$now}.xml"), $this->soapClient->__getLastRequest());
+        file_put_contents($this->getPath("{$method}-response-{$now}.xml"), $this->soapClient->__getLastRequest());
     }
 
     /**
@@ -166,19 +159,21 @@ abstract class WsAfip
      */
     protected function execute(string $method, array $params = []): object
     {
-        $response = $this->client->{$method}($params);
+        $response = $this->soapClient->{$method}($params);
 
-        $this->log($method);
+        $this->saveRequestAndResponse($method);
 
         if (is_soap_fault($response)) {
-            throw new Exception("Error SOAP: {$response->faultcode} - {$response->faultstring}");
+            throw new Exception("SOAP Error: ({$response->faultcode}) {$response->faultstring}");
         }
 
         if (property_exists($response, "{$method}Result")) {
             $result = $response->{"{$method}Result"};
             
             if (isset($result->Errors)) {
-                throw new WsException($result->Errors->Err->Msg, $result->Errors->Err->Code);
+                $message = implode(PHP_EOL, array_map(fn($error) => "({$error->Code}) {$error->Msg}", $result->Errors->Err ?? []));
+
+                throw new WsException("AFIP Error: {$message}");
             }
 
             if (property_exists($result, "ResultGet")) {
