@@ -1,10 +1,10 @@
 <?php
 
 use Afiphp\WebServices\WsFeV1;
-use Afiphp\Invoice;
+use Afiphp\Entities\Invoice;
 use Afiphp\Enums\InvoiceType;
-use Afiphp\Customer;
-use Afiphp\Cae;
+use Afiphp\Entities\Customer;
+use Afiphp\WebServices\Cae;
 
 beforeEach(function () {
     $this->wsfe = new WsFeV1('20920808582', __DIR__ . '/resources');
@@ -46,4 +46,16 @@ it('creates approved CAE from credit note', function () {
     expect($cae->getLastInvoiceNumber())->toBe($nextCreditNoteNumber);
     expect($cae->getNumber())->not()->toBeNull();
     expect($cae->getDueDate())->not()->toBeNull();
+});
+
+it('gets CAE', function () {
+    /** @var Cae */
+    $cae = $this->wsfe->getCae(InvoiceType::FACTURA_A, 2, 50);
+
+    expect($cae->getInvoiceType())->toBe(1);
+    expect($cae->getSalesPoint())->toBe(2);
+    expect($cae->getFirstInvoiceNumber())->toBe(50);
+    expect($cae->getLastInvoiceNumber())->toBe(50);
+    expect($cae->getNumber())->toBe('71372966559657');
+    expect($cae->isApproved())->toBeTrue();
 });

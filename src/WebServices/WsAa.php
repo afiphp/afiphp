@@ -41,7 +41,7 @@ class WsAa extends AbstractWsAfip
      */
     protected function getTa(string $serviceName): SimpleXMLElement
     {
-        $filename = $this->getPath("{$serviceName}-ta.xml");
+        $filename = $this->getPath("ta-{$serviceName}.xml");
 
         if (file_exists($filename)) {
             $xml = simplexml_load_file($filename);
@@ -63,11 +63,11 @@ class WsAa extends AbstractWsAfip
     }
 
     /**
-     * Create TRA and get filename
+     * Create TRA
      */
     protected function createTra(string $serviceName): string
     {
-        $filename = $this->getPath("{$serviceName}-tra.xml");
+        $filename = $this->getPath("tra-{$serviceName}.xml");
 
         $tra = new SimpleXMLElement(trim(<<<XML
             <?xml version="1.0" encoding="UTF-8"?>

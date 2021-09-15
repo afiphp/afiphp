@@ -3,7 +3,8 @@
 namespace Afiphp\WebServices;
 
 use DateTime;
-use Afiphp\WebServices\Contracts\Invoiceable;
+use Afiphp\WebServices\Contracts\WsFeV1InvoiceConverter;
+use Exception;
 
 class WsFeV1 extends AbstractWsAfipWithCredentials
 {
@@ -17,6 +18,7 @@ class WsFeV1 extends AbstractWsAfipWithCredentials
 
     /**
      * Get server status
+     * @throws Exception
      */
     public function getServerStatus(): array
     {
@@ -31,6 +33,7 @@ class WsFeV1 extends AbstractWsAfipWithCredentials
 
     /**
      * Get last authorized invoice number
+     * @throws Exception
      */
     public function getLastAuthorizedInvoiceNumber(int $invoiceType, int $salesPoint): int
     {
@@ -44,6 +47,7 @@ class WsFeV1 extends AbstractWsAfipWithCredentials
 
     /**
      * Get next invoice number
+     * @throws Exception
      */
     public function getNextInvoiceNumber(int $invoiceType, int $salesPoint): int
     {
@@ -54,6 +58,7 @@ class WsFeV1 extends AbstractWsAfipWithCredentials
      * Get sales points
      *
      * @return object[]
+     * @throws Exception
      */
     public function getSalesPoints(): array
     {
@@ -62,6 +67,7 @@ class WsFeV1 extends AbstractWsAfipWithCredentials
 
     /**
      * Get invoice data
+     * @throws Exception
      */
     public function getInvoice(int $documentType, int $salesPoint, int $number): object
     {
@@ -75,8 +81,35 @@ class WsFeV1 extends AbstractWsAfipWithCredentials
     }
 
     /**
+     * Get CAE
+     * @throws Exception
+     */
+    public function getCae(int $documentType, int $salesPoint, int $number): Cae
+    {
+        $response = $this->execute('FECompConsultar', [
+            'FeCompConsReq' => [
+                'CbteTipo' => $documentType,
+                'PtoVta' => $salesPoint,
+                'CbteNro' => $number,
+            ],
+        ]);
+
+        return new Cae(
+            $response->Resultado,
+            (int)$response->CbteTipo,
+            (int)$response->PtoVta,
+            (int)$response->CbteDesde,
+            (int)$response->CbteHasta,
+            $response->CodAutorizacion,
+            DateTime::createFromFormat('Ymd', $response->FchVto),
+            array_map(fn($observation) => "({$observation->Code}) {$observation->Msg}", $response->Observaciones->Obs ?? [])
+        );
+    }
+
+    /**
      * Create CAE
      * @return Cae[]
+     * @throws Exception
      */
     public function createCae(array $data): array
     {
@@ -106,9 +139,10 @@ class WsFeV1 extends AbstractWsAfipWithCredentials
 
     /**
      * Create CAE for invoice
+     * @throws Exception
      */
-    public function createCaeForInvoice(Invoiceable $invoice): Cae
+    public function createCaeForInvoice(WsFeV1InvoiceConverter $invoice): Cae
     {
-        return $this->createCae($invoice->toAfipService($this->getServiceName()))[0];
+        return $this->createCae($invoice->toWsFeV1())[0];
     }
 }

@@ -1,6 +1,6 @@
 <?php
 
-namespace Afiphp\Invoice;
+namespace Afiphp\Entities;
 
 class InvoiceTax
 {

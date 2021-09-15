@@ -1,10 +1,9 @@
 <?php
 
 use Afiphp\WebServices\WsFeV1;
-use Afiphp\WebServices\AbstractWsAfip;
-use Afiphp\Invoice;
+use Afiphp\Entities\Invoice;
 use Afiphp\Enums\InvoiceType;
-use Afiphp\Customer;
+use Afiphp\Entities\Customer;
 
 beforeEach(function () {
     $this->invoice = Invoice::createProductInvoice(InvoiceType::FACTURA_A, 2, 150, 0, 0 , new Customer(80, '20111111112'))
@@ -16,7 +15,7 @@ it('can be converted to WsFeV1', function () {
     $data = (clone $this->invoice)
         ->addRelatedInvoice(InvoiceType::FACTURA_A, 2, 50)
         ->addOptional('A1', 'B2')
-        ->toAfipService(AbstractWsAfip::WSFEV1);
+        ->toWsFeV1();
 
     expect($data)->toMatchArray([
         'FeCAEReq' => [
@@ -83,7 +82,7 @@ it('can be created from WsFeV1', function () {
     $wsfe = new WsFeV1('20920808582', __DIR__ . '/resources');
     $data = $wsfe->getInvoice(InvoiceType::FACTURA_A, 2, 50);
 
-    $invoice = Invoice::createFromWsFeV1($data);
+    $invoice = Invoice::createFromWsfe($data);
 
     expect($invoice->getType())->toBe(1);
     expect($invoice->getSalesPoint())->toBe(2);
