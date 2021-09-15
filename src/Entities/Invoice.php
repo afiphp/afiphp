@@ -1,6 +1,6 @@
 <?php
 
-namespace Afiphp;
+namespace Afiphp\Invoice;
 
 use DateTime;
 use Afiphp\WebServices\Contracts\Invoiceable;
