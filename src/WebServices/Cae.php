@@ -1,6 +1,6 @@
 <?php
 
-namespace Afiphp;
+namespace Afiphp\WebServices;
 
 use DateTime;
 

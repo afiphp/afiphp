@@ -11,6 +11,21 @@ abstract class WsAfip
     const WSFEV1 = 'wsfe';
     const WSAA = 'wsaa';
 
+    const ENV_SANDBOX = 'sandbox';
+    const ENV_PRODUCTION = 'production';
+
+    const SOAP_URLS = [
+        self::ENV_PRODUCTION => [
+            self::WSFEV1 => 'https://servicios1.afip.gov.ar/wsfev1/service.asmx',
+            self::WSAA => 'https://wsaa.afip.gov.ar/ws/services/LoginCms',
+        ],
+
+        self::ENV_SANDBOX => [
+            self::WSFEV1 => 'https://wswhomo.afip.gov.ar/wsfev1/service.asmx',
+            self::WSAA => 'https://wsaahomo.afip.gov.ar/ws/services/LoginCms',
+        ],
+    ];
+
     protected string $cuit;
     protected bool $isSandbox;
     protected string $certificateFilename;
@@ -23,11 +38,6 @@ abstract class WsAfip
      * Get service name
      */
     public abstract function getServiceName(): string;
-
-    /**
-     * Get URL
-     */
-    public abstract function getSoapUrl(): string;
 
     /**
      * Web Service Afip
@@ -105,9 +115,18 @@ abstract class WsAfip
     /**
      * Get is sandbox
      */ 
-    public function isSandbox(): bool
+    public function getEnvironment(): string
     {
-        return $this->isSandbox;
+        return $this->isSandbox ? self::ENV_SANDBOX: self::ENV_PRODUCTION;
+    }
+
+
+    /**
+     * Get URL
+     */
+    public function getSoapUrl(): string
+    {
+        return self::SOAP_URLS[$this->getEnvironment()][$this->getServiceName()];
     }
 
     /**
@@ -115,8 +134,7 @@ abstract class WsAfip
      */
     public function getWsdlFilename(): string
     {
-        $suffix = $this->isSandbox ? '-sandbox' : '';
-        return __DIR__ . "/Wsdl/{$this->getServiceName()}{$suffix}.xml";
+        return __DIR__ . "/Wsdl/{$this->getServiceName()}-{$this->getEnvironment()}.xml";
     }
 
     /**

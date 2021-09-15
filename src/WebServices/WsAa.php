@@ -4,7 +4,6 @@ namespace Afiphp\WebServices;
 
 use SimpleXMLElement;
 use Exception;
-use Afiphp\Credentials;
 
 class WsAa extends WsAfip
 {
@@ -14,16 +13,6 @@ class WsAa extends WsAfip
     public function getServiceName(): string
     {
         return WsAfip::WSAA;
-    }
-
-    /**
-     * @inheritDoc
-     */
-    public function getSoapUrl(): string
-    {
-        return $this->isSandbox 
-            ? 'https://wsaahomo.afip.gov.ar/ws/services/LoginCms'
-            : 'https://wsaa.afip.gov.ar/ws/services/LoginCms';
     }
 
     /**
@@ -97,7 +86,7 @@ class WsAa extends WsAfip
         }
 
         fclose($file);
-        unlink($outputPath);
+        // unlink($outputPath);
 
         return $cms;
     }
@@ -132,7 +121,7 @@ class WsAa extends WsAfip
     /**
      * Get credentials for service
      */
-    public function getCredentialsForService(string $serviceName): Credentials
+    public function getCredentials(string $serviceName): Credentials
     {
         $taFilename = $this->getTaFilename($serviceName);
         $actualTime = $expirationTime = date('c');
@@ -150,13 +139,5 @@ class WsAa extends WsAfip
         }
 
         return new Credentials($taXml->credentials->token, $taXml->credentials->sign);
-    }
-
-    /**
-     * Get credentials for WsFEV1
-     */
-    public function getCredentialsForWsFEV1(): Credentials
-    {
-        return $this->getCredentialsForService(WsAfip::WSFEV1);
     }
 }

@@ -4,6 +4,7 @@ namespace Afiphp;
 
 use DateTime;
 use Afiphp\WebServices\Contracts\Invoiceable;
+use Afiphp\WebServices\Cae;
 
 class Invoice implements Invoiceable
 {
@@ -523,7 +524,7 @@ class Invoice implements Invoiceable
     /**
      * Create an invoice from AFIP service data
      */
-    public static function createFromAfipService(string $serviceName, object $data): self
+    public static function createFromWsFeV1(object $data): self
     {
         $invoice = new static(
             (int)$data->CbteTipo,
