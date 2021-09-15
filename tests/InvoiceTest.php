@@ -1,7 +1,7 @@
 <?php
 
 use Afiphp\WebServices\WsFeV1;
-use Afiphp\WebServices\WsAfip;
+use Afiphp\WebServices\AbstractWsAfip;
 use Afiphp\Invoice;
 use Afiphp\Enums\InvoiceType;
 use Afiphp\Customer;
@@ -16,7 +16,7 @@ it('can be converted to WsFeV1', function () {
     $data = (clone $this->invoice)
         ->addRelatedInvoice(InvoiceType::FACTURA_A, 2, 50)
         ->addOptional('A1', 'B2')
-        ->toAfipService(WsAfip::WSFEV1);
+        ->toAfipService(AbstractWsAfip::WSFEV1);
 
     expect($data)->toMatchArray([
         'FeCAEReq' => [

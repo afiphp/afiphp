@@ -5,38 +5,69 @@ namespace Afiphp\WebServices;
 use SimpleXMLElement;
 use Exception;
 
-class WsAa extends WsAfip
+class WsAa extends AbstractWsAfip
 {
     /**
      * @inheritDoc
      */
     public function getServiceName(): string
     {
-        return WsAfip::WSAA;
+        return AbstractWsAfip::WSAA;
     }
 
     /**
-     * Get TRA filename
+     * Get login
+     * @throws Exception
      */
-    protected function getTraFilename(string $serviceName): string
+    public function getLogin(string $signature): string
     {
-        return "{$this->xmlPath}{$this->cuit}-{$serviceName}-tra.xml";
+        return $this->execute('loginCms', ['in0' => $signature])->loginCmsReturn;
     }
 
     /**
-     * Get TA filename
+     * Get credentials for service
+     * @throws Exception
      */
-    protected function getTaFilename(string $serviceName): string
+    public function getCredentials(string $serviceName): Credentials
     {
-        return "{$this->xmlPath}{$this->cuit}-{$serviceName}-ta.xml";
+        $ta = $this->getTa($serviceName);
+
+        return new Credentials($ta->credentials->token, $ta->credentials->sign);
     }
 
     /**
-     * Create TRA
+     * Get TA
+     * @throws Exception
+     */
+    protected function getTa(string $serviceName): SimpleXMLElement
+    {
+        $filename = $this->getPath("{$serviceName}-ta.xml");
+
+        if (file_exists($filename)) {
+            $xml = simplexml_load_file($filename);
+            $actualTime = date('c');
+            $expirationTime = date('c', strtotime($xml->header->expirationTime));
+
+            if ($actualTime <= $expirationTime) {
+                return $xml;
+            }
+        }
+
+        $traFilename = $this->createTra($serviceName);
+        $signature = $this->getSignature($traFilename);
+        $login = $this->getLogin($signature);
+
+        file_put_contents($filename, $login);
+
+        return simplexml_load_file($filename);
+    }
+
+    /**
+     * Create TRA and get filename
      */
     protected function createTra(string $serviceName): string
     {
-        $traFilename = $this->getTraFilename($serviceName);
+        $filename = $this->getPath("{$serviceName}-tra.xml");
 
         $tra = new SimpleXMLElement(trim(<<<XML
             <?xml version="1.0" encoding="UTF-8"?>
@@ -49,95 +80,35 @@ class WsAa extends WsAfip
         $tra->header->addChild('generationTime', date('c', date('U') - 600));
         $tra->header->addChild('expirationTime', date('c', date('U') + 600));
         $tra->addChild('service', $serviceName);
-        $tra->asXML($traFilename);
+        $tra->asXML($filename);
 
-        return $traFilename;
+        return $filename;
     }
 
     /**
-     * Sign TRA
+     * Get signature
+     * @throws Exception
      */
-    protected function signTra(string $traFilename): string
+    protected function getSignature(string $filename): string
     {
-        $outputPath = "{$traFilename}.tmp";
+        $signedFilename = "{$filename}.tmp";
         $status = openssl_pkcs7_sign(
-            $traFilename, 
-            $outputPath,
+            $filename, 
+            $signedFilename,
             "file://{$this->certificateFilename}",
             ["file://{$this->privateKeyFilename}", $this->passphrase],
             [],
             !PKCS7_DETACHED
         );
 
-        if (!$status) {
+        if ( ! $status) {
             throw new Exception("ERROR generating PKCS#7 signature");
         }
 
-        $file = fopen($outputPath, 'r');
-        $cms = '';
-        $line = 0;
+        $signedContents = file_get_contents($signedFilename);
+        unlink($signedFilename);
 
-        while (!feof($file)) {
-            $buffer = fgets($file);
-
-            if ($line++ >= 4) {
-                $cms .= $buffer;
-            }
-        }
-
-        fclose($file);
-        // unlink($outputPath);
-
-        return $cms;
-    }
-
-    /**
-     * Get login
-     */
-    protected function getLogin(string $cms): string
-    {
-        $response = $this->execute('loginCms', ['in0' => $cms]);
-
-        return $response->loginCmsReturn;
-    }
-
-    /**
-     * Create TA
-     */
-    protected function createTa(string $serviceName): string
-    {
-        $login = $this->getLogin(
-            $this->signTra(
-                $this->createTra($serviceName)
-            )
-        );
-
-        $taFilename = $this->getTaFilename($serviceName);
-        file_put_contents($taFilename, $login);
-
-        return $taFilename;
-    }
-
-    /**
-     * Get credentials for service
-     */
-    public function getCredentials(string $serviceName): Credentials
-    {
-        $taFilename = $this->getTaFilename($serviceName);
-        $actualTime = $expirationTime = date('c');
-
-        if (file_exists($taFilename)) {
-            $taXml = simplexml_load_file($taFilename);
-            $expirationTime = date('c', strtotime($taXml->header->expirationTime));
-        } else {
-            $expirationTime = $actualTime;
-        }
-
-        if ($actualTime >= $expirationTime) {
-            $taFilename = $this->createTa($serviceName);
-            $taXml = simplexml_load_file($taFilename);
-        }
-
-        return new Credentials($taXml->credentials->token, $taXml->credentials->sign);
+        $begin = "Content-Transfer-Encoding: base64";
+        return trim(substr($signedContents, strpos($signedContents, $begin) + strlen($begin)));
     }
 }

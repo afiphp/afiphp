@@ -6,7 +6,7 @@ use SoapClient;
 use Exception;
 use Afiphp\Exceptions\WsException;
 
-abstract class WsAfip
+abstract class AbstractWsAfip
 {
     const WSFEV1 = 'wsfe';
     const WSAA = 'wsaa';
@@ -174,6 +174,7 @@ abstract class WsAfip
 
     /**
      * Execute
+     * @throws Exception
      */
     protected function execute(string $method, array $params = []): object
     {

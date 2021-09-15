@@ -2,12 +2,15 @@
 
 namespace Afiphp\WebServices;
 
-abstract class WsAfipWithCredentials extends WsAfip
+use Exception;
+
+abstract class AbstractWsAfipWithCredentials extends AbstractWsAfip
 {
     protected Credentials $credentials;
 
     /**
      * @inheritDoc
+     * @throws Exception
      */
     public function __construct(
         string $cuit,

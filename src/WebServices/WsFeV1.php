@@ -5,14 +5,14 @@ namespace Afiphp\WebServices;
 use DateTime;
 use Afiphp\WebServices\Contracts\Invoiceable;
 
-class WsFeV1 extends WsAfipWithCredentials
+class WsFeV1 extends AbstractWsAfipWithCredentials
 {
     /**
      * @inheritDoc
      */
     public function getServiceName(): string
     {
-        return WsAfip::WSFEV1;
+        return AbstractWsAfip::WSFEV1;
     }
 
     /**
