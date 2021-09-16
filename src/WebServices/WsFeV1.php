@@ -55,17 +55,6 @@ class WsFeV1 extends AbstractWsAfipWithCredentials
     }
 
     /**
-     * Get sales points
-     *
-     * @return object[]
-     * @throws Exception
-     */
-    public function getSalesPoints(): array
-    {
-        return $this->execute('FEParamGetPtosVenta')->PtoVenta;
-    }
-
-    /**
      * Get invoice data
      * @throws Exception
      */
@@ -81,18 +70,169 @@ class WsFeV1 extends AbstractWsAfipWithCredentials
     }
 
     /**
+     * Recupera la cotizacion de la moneda consultada y su fecha.
+     *
+     * @param string $monId : Código de moneda de la que se solicita cotización
+     *
+     * Retorna la última cotización de la base de datos aduanera de la moneda ingresada.
+     * MonCotiz double(4+6) Cotización de la moneda
+     * MonId string(3) Código de moneda
+     * FchCotiz string(8) Fecha de la cotización. Formato yyyymmdd
+     */
+    public function getCurrencyRate(string $currencyCode): object
+    {
+        return $this->execute('FEParamGetCotizacion', ['MonId' => $currencyCode]);
+    }
+
+    /*
+     * Recupera el listado de puntos de venta registrados y su estado:
+     * Permite consultar los puntos de venta para ambos tipos de Código de Autorización (CAE y CAEA) gestionados
+     * previamente por la CUIT emisora.
+     *
+     * PtoVenta: Detalle de los tipos puntos de venta electrónicos:
+     * Nro int(4) Punto de venta
+     * EmisionTipo string(8) Identifica si es punto de venta para CAE o CAE
+     * Bloqueado string(1) Indica si el punto de  venta  esta  bloqueado. De darse esta situación se
+     *               deberá ingresar al ABM de puntos de venta a regularizar la situación Valores  S o N
+     * FchBaja string(8) Indica la fecha de baja en caso de estarlo
+     */
+    public function getSalesPoints(): array
+    {
+        return $this->execute('FEParamGetPtosVenta')->PtoVenta;
+    }
+
+    public function getAvailableSalesPoints(): array
+    {
+        return array_values(array_filter(
+            $this->getSalesPoints(),
+            fn($salesPoint) => $salesPoint->Bloqueado === 'N'
+        ));
+    }
+
+    /*
+     * Recupera el listado de Tipos de Comprobantes utilizables en servicio de autorización.
+     * Permite consultar los tipos de comprobantes habilitados en este WS.
+     *
+     * CbteTipo: Detalle de los tipos de comprobantes; esta compuesto por los siguientes campos:
+     * Id int(3)  Código  de comprobante
+     * Desc string(250) Descripción
+     * FchDesde string(8) Fecha de vigencia desde
+     * FchHasta string(8) Fecha de vigencia hasta
+     */
+    public function getInvoiceTypes(): array
+    {
+        return $this->execute('FEParamGetTiposCbte')->CbteTipo;
+    }
+
+    /*
+     * Recupera el listado de identificadores para el campo Concepto.
+     *
+     * ConceptoTipo: Detalle de los tipos de conceptos; esta compuesto por los siguientes campos:
+     * Id int(3)  Código  de concepto
+     * Desc string(250) Descripción
+     * FchDesde string(8) Fecha de vigencia desde
+     * FchHasta string(8) Fecha de vigencia hasta
+     */
+    public function getConceptTypes(): array
+    {
+        return $this->execute('FEParamGetTiposConcepto')->ConceptoTipo;
+    }
+
+    /*
+     * Recupera el listado de Tipos de Documentos utilizables en servicio de autorización.
+     *
+     * DocTipo: Retorna el universo de tipos de documentos disponibles en el presente WS;
+     *               esta compuesto por los siguientes campos:
+     * Id int(2)  Código de tipo de documento
+     * Desc string(250) Descripción
+     * FchDesde string(8) Fecha de vigencia desde
+     * FchHasta string(8) Fecha de vigencia hasta
+     */
+    public function getDocumentTypes(): array
+    {
+        return $this->execute('FEParamGetTiposDoc')->DocTipo;
+    }
+
+    /*
+     * Recupera el listado de Tipos de Iva utilizables en servicio de autorización:
+     * Se obtiene la totalidad de alícuotas de IVA posibles de uso en el presente WS, detallando código y descripción.
+     *
+     * IvaTipo: Retorna el universo de tipos de documentos disponibles en el presente WS;
+     *               esta compuesto por los siguientes campos:
+     * Id int(2) Tipo de IVA
+     * Desc string(250) Descripción
+     * FchDesde string(8) Fecha de vigencia desde
+     * FchHasta string(8) Fecha de vigencia hasta
+     */
+    public function getTaxes(): array
+    {
+        return $this->execute('FEParamGetTiposIva')->IvaTipo;
+    }
+
+    /*
+     * Recupera el listado de monedas utilizables en servicio de autorización.
+     *
+     * Moneda: Retorna el universo de tipos de documentos disponibles en el presente WS;
+     *               esta compuesto por los siguientes campos:
+     * Id string(3) Código de moneda
+     * Desc string(250) Descripción
+     * FchDesde string(8) Fecha de vigencia desde
+     * FchHasta string(8) Fecha de vigencia hasta
+     */
+    public function getCurrencies(): array
+    {
+        return $this->execute('FEParamGetTiposMonedas')->Moneda;
+    }
+
+    /*
+     * Recupera el listado de identificadores para los campos Opcionales
+     * Permite consultar los códigos y descripciones de los tipos de datos Opcionales que se  encuentran habilitados
+     * para ser usados en el WS.
+     *
+     * OpcionalTipo: Detalle de los tipos de datos opcionales; esta compuesto por los siguientes campos:
+     * Id string(4) Identificador de campo  opcional
+     * Desc string(250) Descripción
+     * FchDesde string(8) Fecha de vigencia desde
+     * FchHasta string(8) Fecha de vigencia hasta
+     */
+    public function getOptionalTypes(): array
+    {
+        return $this->execute('FEParamGetTiposOpcional')->OpcionalTipo;
+    }
+
+    /*
+     * Recupera el listado de los diferentes paises que pueden ser utilizados en el servicio de autorizacion.
+     *
+     * PaisTipo: Lista de paises; esta compuesto por los siguientes campos:
+     * Id string(4) Código de país
+     * Desc string(250) Descripción
+     */
+    public function getCountries(): array
+    {
+        return $this->execute('FEParamGetTiposPaises')->PaisTipo;
+    }
+
+    /*
+     * Recupera el listado de los diferente tributos que pueden ser utilizados en el servicio de autorizacion.
+     *
+     * TributoTipo: Detalle de los tipos de tributos; esta compuesto por los siguientes campos:
+     * Id string(2) Código de Tributo
+     * Desc string(250) Descripción
+     * FchDesde string(8) Fecha de vigencia desde
+     * FchHasta string(8) Fecha de vigencia hasta
+     */
+    public function getTributes(): array
+    {
+        return $this->execute('FEParamGetTiposTributos')->TributoTipo;
+    }
+
+    /**
      * Get CAE
      * @throws Exception
      */
     public function getCae(int $documentType, int $salesPoint, int $number): Cae
     {
-        $response = $this->execute('FECompConsultar', [
-            'FeCompConsReq' => [
-                'CbteTipo' => $documentType,
-                'PtoVta' => $salesPoint,
-                'CbteNro' => $number,
-            ],
-        ]);
+        $response = $this->getInvoice($documentType, $salesPoint, $number);
 
         return new Cae(
             $response->Resultado,

@@ -27,7 +27,7 @@ abstract class AbstractWsAfipWithCredentials extends AbstractWsAfip
     /**
      * @inheritDoc 
      */
-    protected function execute(string $method, array $params = []): object
+    public function execute(string $method, array $params = []): object
     {
         $params['Auth'] = [
             'Token' => $this->credentials->getToken(),

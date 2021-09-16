@@ -176,7 +176,7 @@ abstract class AbstractWsAfip
      * Execute
      * @throws Exception
      */
-    protected function execute(string $method, array $params = []): object
+    public function execute(string $method, array $params = []): object
     {
         $response = $this->soapClient->{$method}($params);
 
