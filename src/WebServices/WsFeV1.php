@@ -162,17 +162,19 @@ class WsFeV1 extends AbstractWsAfipWithCredentials
 
         $nextNumber = $this->getNextInvoiceNumber($invoiceType, $salesPoint);
 
-        foreach ($requests as $i => $request) {
-            if ($requests[$i]['CbteDesde'] === null) {
-                $requests[$i]['CbteDesde'] = $nextNumber;
-                $requests[$i]['CbteHasta'] = $nextNumber;
-
-                $nextNumber++;
+        foreach ($requests as &$request) {
+            if ($request['CbteDesde'] === null) {
+                // Post-increment: Returns $nextNumber, then increments $nextNumber by one.
+                $request['CbteDesde'] = $request['CbteHasta'] = $nextNumber++;
             }
 
-            unset($requests[$i]['PtoVta']);
-            unset($requests[$i]['CbteTipo']);
+            unset($request['PtoVta']);
+            unset($request['CbteTipo']);
         }
+
+        // Reference of a $value and the last array element remain even after the foreach loop.
+        // It is recommended to destroy it by unset(). 
+        unset($request);
 
         $params = [
             'FeCAEReq' => [
