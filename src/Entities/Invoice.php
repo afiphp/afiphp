@@ -2,12 +2,11 @@
 
 namespace Afiphp\Entities;
 
-use Exception;
 use DateTime;
-use Afiphp\WebServices\Contracts\WsFeV1InvoiceConverter;
+use Afiphp\WebServices\Contracts\WsFeV1Converter;
 use Afiphp\WebServices\Cae;
 
-class Invoice implements WsFeV1InvoiceConverter
+class Invoice implements WsFeV1Converter
 {
     protected int $type;
     protected int $salesPoint;
@@ -577,11 +576,13 @@ class Invoice implements WsFeV1InvoiceConverter
     }
 
     /**
-     * Convert to data for WsFE service
+     * @inheritDoc
      */
-    public function toWsFeV1(): array
+    public function toWsFeV1InvoiceRequest(): array
     {
         $details = [
+            'PtoVta' => $this->salesPoint,
+            'CbteTipo' => $this->type,
             'CbteDesde' => $this->number,
             'CbteHasta' => $this->number,
             'CbteFch' => $this->date->format('Ymd'),
@@ -646,17 +647,6 @@ class Invoice implements WsFeV1InvoiceConverter
             }, $this->relatedInvoices);
         }
 
-        return [
-            'FeCAEReq' => [
-                'FeCabReq' => [
-                    'CantReg' => 1,
-                    'PtoVta' => $this->salesPoint,
-                    'CbteTipo' => $this->type,
-                ],
-                'FeDetReq' => [
-                    'FECAEDetRequest' => $details,
-                ],
-            ],
-        ];
+        return $details;
     }
 }

@@ -4,7 +4,6 @@ use Afiphp\WebServices\WsFeV1;
 use Afiphp\Entities\Invoice;
 use Afiphp\Enums\InvoiceType;
 use Afiphp\Entities\Customer;
-use Afiphp\WebServices\Cae;
 
 beforeEach(function () {
     $this->wsfe = new WsFeV1('20920808582', __DIR__ . '/resources');
@@ -14,10 +13,11 @@ beforeEach(function () {
 });
 
 it('creates approved CAE from invoice', function () {
-    $nextNumber = $this->wsfe->getNextInvoiceNumber(InvoiceType::FACTURA_A, 2);
+    /** @var WsFeV1 */
+    $wsfe = $this->wsfe;
 
-    /** @var Cae */
-    $cae = $this->wsfe->createCaeForInvoice($this->invoice);
+    $nextNumber = $wsfe->getNextInvoiceNumber(InvoiceType::FACTURA_A, 2);
+    $cae = $wsfe->createCaeFrom($this->invoice);
 
     expect($cae->isApproved())->toBeTrue();
     expect($cae->getInvoiceType())->toBe(InvoiceType::FACTURA_A);
@@ -29,15 +29,18 @@ it('creates approved CAE from invoice', function () {
 });
 
 it('creates approved CAE from credit note', function () {
-    $nextCreditNoteNumber = $this->wsfe->getNextInvoiceNumber(InvoiceType::NOTA_CREDITO_A, 2);
+    /** @var WsFeV1 */
+    $wsfe = $this->wsfe;
+
+    $nextCreditNoteNumber = $wsfe->getNextInvoiceNumber(InvoiceType::NOTA_CREDITO_A, 2);
 
     /** @var Invoice */
-    $creditNote = (clone $this->invoice)
+    $creditNote = (clone $this->invoice);
+    $creditNote
         ->setType(InvoiceType::NOTA_CREDITO_A)
         ->addRelatedInvoice(InvoiceType::FACTURA_A, 2, 50);
 
-    /** @var Cae */
-    $cae = $this->wsfe->createCaeForInvoice($creditNote);
+    $cae = $wsfe->createCaeFrom($creditNote);
 
     expect($cae->isApproved())->toBeTrue();
     expect($cae->getInvoiceType())->toBe(InvoiceType::NOTA_CREDITO_A);
@@ -48,9 +51,40 @@ it('creates approved CAE from credit note', function () {
     expect($cae->getDueDate())->not()->toBeNull();
 });
 
+it('creates approved CAE from batch', function () {
+    /** @var WsFeV1 */
+    $wsfe = $this->wsfe;
+
+    $nextNumber = $wsfe->getNextInvoiceNumber(InvoiceType::FACTURA_A, 2);
+    $caes = $wsfe->createCaeFromBatch([
+        clone $this->invoice,
+        clone $this->invoice,
+        clone $this->invoice,
+        clone $this->invoice,
+        clone $this->invoice,
+        clone $this->invoice,
+    ]);
+
+    expect($caes)->toBeArray();
+    expect($caes)->toHaveCount(6);
+    expect($caes)->each(function ($cae) use (&$nextNumber) {
+        $cae->isApproved()->toBeTrue();
+        $cae->getInvoiceType()->toBe(InvoiceType::FACTURA_A);
+        $cae->getSalesPoint()->toBe(2);
+        $cae->getFirstInvoiceNumber()->toBe($nextNumber);
+        $cae->getLastInvoiceNumber()->toBe($nextNumber);
+        $cae->getNumber()->not()->toBeNull();
+        $cae->getDueDate()->not()->toBeNull();
+
+        $nextNumber++;
+    });
+});
+
 it('gets CAE', function () {
-    /** @var Cae */
-    $cae = $this->wsfe->getCae(InvoiceType::FACTURA_A, 2, 50);
+    /** @var WsFeV1 */
+    $wsfe = $this->wsfe;
+
+    $cae = $wsfe->getCae(InvoiceType::FACTURA_A, 2, 50);
 
     expect($cae->getInvoiceType())->toBe(1);
     expect($cae->getSalesPoint())->toBe(2);

@@ -3,7 +3,7 @@
 namespace Afiphp\WebServices;
 
 use DateTime;
-use Afiphp\WebServices\Contracts\WsFeV1InvoiceConverter;
+use Afiphp\WebServices\Contracts\WsFeV1Converter;
 use Exception;
 
 class WsFeV1 extends AbstractWsAfipWithCredentials
@@ -111,16 +111,9 @@ class WsFeV1 extends AbstractWsAfipWithCredentials
      * @return Cae[]
      * @throws Exception
      */
-    public function createCae(array $data): array
+    public function createCae(array $params): array
     {
-        if ($data['FeCAEReq']['FeDetReq']['FECAEDetRequest']['CbteDesde'] === null) {
-            $nextNumber = $this->getNextInvoiceNumber($data['FeCAEReq']['FeCabReq']['CbteTipo'], $data['FeCAEReq']['FeCabReq']['PtoVta']);
-
-            $data['FeCAEReq']['FeDetReq']['FECAEDetRequest']['CbteDesde'] = $nextNumber;
-            $data['FeCAEReq']['FeDetReq']['FECAEDetRequest']['CbteHasta'] = $nextNumber;
-        }
-
-        $response = $this->execute('FECAESolicitar', $data);
+        $response = $this->execute('FECAESolicitar', $params);
 
         $type = (int)$response->FeCabResp->CbteTipo;
         $salesPoint = (int)$response->FeCabResp->PtoVta;
@@ -138,11 +131,62 @@ class WsFeV1 extends AbstractWsAfipWithCredentials
     }
 
     /**
-     * Create CAE for invoice
+     * Create CAE from ...
      * @throws Exception
      */
-    public function createCaeForInvoice(WsFeV1InvoiceConverter $invoice): Cae
+    public function createCaeFrom(WsFeV1Converter $entity): Cae
     {
-        return $this->createCae($invoice->toWsFeV1())[0];
+        return $this->createCaeFromBatch([$entity])[0];
+    }
+
+    /**
+     * Create CAE from batch
+     *
+     * @param WsFeV1Converter[] $entities
+     * @return Cae[]
+     * @throws Exception
+     */
+    public function createCaeFromBatch(array $entities): array
+    {
+        $requests = array_map(
+            fn(WsFeV1Converter $entity) => $entity->toWsFeV1InvoiceRequest(),
+            $entities
+        );
+
+        if ( ! $requests) {
+            return [];
+        }
+
+        $salesPoint = $requests[0]['PtoVta'];
+        $invoiceType = $requests[0]['CbteTipo'];
+
+        $nextNumber = $this->getNextInvoiceNumber($invoiceType, $salesPoint);
+
+        foreach ($requests as $i => $request) {
+            if ($requests[$i]['CbteDesde'] === null) {
+                $requests[$i]['CbteDesde'] = $nextNumber;
+                $requests[$i]['CbteHasta'] = $nextNumber;
+
+                $nextNumber++;
+            }
+
+            unset($requests[$i]['PtoVta']);
+            unset($requests[$i]['CbteTipo']);
+        }
+
+        $params = [
+            'FeCAEReq' => [
+                'FeCabReq' => [
+                    'CantReg' => count($requests),
+                    'PtoVta' => $salesPoint,
+                    'CbteTipo' => $invoiceType,
+                ],
+                'FeDetReq' => [
+                    'FECAEDetRequest' => $requests,
+                ],
+            ],
+        ];
+
+        return $this->createCae($params);
     }
 }
