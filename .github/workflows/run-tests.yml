@@ -33,16 +33,5 @@ jobs:
       - name: Install dependencies
         run: composer update --${{ matrix.stability }} --prefer-dist --no-interaction
 
-      - name: Download resources
-        uses: actions/download-artifact@v2
-        with:
-          name: resources
-
       - name: Execute tests
-        run: vendor/bin/pest
-
-      - name: Upload resources
-        uses: actions/upload-artifact@v2
-        with:
-          name: resources
-          path: tests/resources
+        run: vendor/bin/pest tests/InvoiceTest.php
