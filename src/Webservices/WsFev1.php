@@ -242,13 +242,29 @@ class WsFev1 extends AbstractWsAfipWithCredentials
 
     /**
      * Get CAE
+     *
      * @throws Exception
      */
     public function getCae(int $documentType, int $salesPoint, int $number): Cae
     {
-        $invoice = $this->getInvoice($documentType, $salesPoint, $number);
+        $response = $this->execute('FECompConsultar', [
+            'FeCompConsReq' => [
+                'CbteTipo' => $documentType,
+                'PtoVta' => $salesPoint,
+                'CbteNro' => $number,
+            ],
+        ]);
 
-        return $invoice->cae;
+        return new Cae(
+            $response->Resultado,
+            (int)$response->CbteTipo,
+            (int)$response->PtoVta,
+            (int)$response->CbteDesde,
+            (int)$response->CbteHasta,
+            $response->CodAutorizacion,
+            DateTime::createFromFormat('Ymd', $response->FchVto),
+            array_map(fn ($observation) => "({$observation->Code}) {$observation->Msg}", $response->Observaciones->Obs ?? [])
+        );
     }
 
     /**

@@ -12,12 +12,12 @@ class SalesPoint
     public ?DateTime $lockedAt;
 
     public function __construct(
-        int $id,
+        int $number,
         string $type,
         bool $isLocked = false,
         DateTime $lockedAt = null
     ) {
-        $this->id = $id;
+        $this->number = $number;
         $this->type = $type;
         $this->isLocked = $isLocked;
         $this->lockedAt = $lockedAt;
