@@ -1,42 +1,37 @@
 {
-    "name": ":vendor_slug/:package_slug",
-    "description": ":package_description",
+    "name": "afiphp/afiphp",
+    "description": "Webservices AFIP",
     "keywords": [
-        ":vendor_name",
-        ":package_slug"
+        "afiphp",
+        "afip"
     ],
-    "homepage": "https://github.com/:vendor_slug/:package_slug",
+    "homepage": "https://github.com/afiphp/afiphp",
     "license": "MIT",
     "authors": [
         {
-            "name": ":author_name",
-            "email": "author@domain.com",
+            "name": "Claudio Escobar",
+            "email": "claudioe0407@gmail.com",
             "role": "Developer"
         }
     ],
     "require": {
-        "php": "^8.0"
+        "php": ">=7.4"
     },
     "require-dev": {
         "friendsofphp/php-cs-fixer": "^3.0",
-        "phpunit/phpunit": "^9.5",
-        "spatie/ray": "^1.28",
+        "pestphp/pest": "^1.18",
+        "symfony/var-dumper": "^5.3",
         "vimeo/psalm": "^4.8"
     },
     "autoload": {
         "psr-4": {
-            "VendorName\\Skeleton\\": "src"
-        }
-    },
-    "autoload-dev": {
-        "psr-4": {
-            "VendorName\\Skeleton\\Tests\\": "tests"
+            "Afiphp\\": "src"
         }
     },
     "scripts": {
         "psalm": "vendor/bin/psalm",
-        "test": "vendor/bin/phpunit",
-        "test-coverage": "vendor/bin/phpunit --coverage-html coverage",
+        "test": "vendor/bin/pest",
+        "test-coverage": "vendor/bin/pest --coverage-html coverage",
         "format": "vendor/bin/php-cs-fixer fix --allow-risky=yes"
     },
     "config": {
