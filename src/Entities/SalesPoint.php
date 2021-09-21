@@ -16,8 +16,7 @@ class SalesPoint
         string $type,
         bool $isLocked = false,
         DateTime $lockedAt = null
-    )
-    {
+    ) {
         $this->id = $id;
         $this->type = $type;
         $this->isLocked = $isLocked;

@@ -14,8 +14,7 @@ class Currency
         string $code,
         float $rate,
         DateTime $rateAt = null
-    )
-    {
+    ) {
         $this->code = $code;
         $this->rate = $rate;
         $this->rateAt = $rateAt;
