@@ -1,9 +1,9 @@
 <?php
 
-use Afiphp\Enums\InvoiceType;
-use Afiphp\Enums\IdentityDocumentType;
-use Afiphp\Entities\Invoice;
 use Afiphp\Entities\Customer;
+use Afiphp\Entities\Invoice;
+use Afiphp\Enums\IdentityDocumentType;
+use Afiphp\Enums\InvoiceType;
 
 it('can be converted to WsFev1', function () {
     $data = Invoice::createProductInvoice(

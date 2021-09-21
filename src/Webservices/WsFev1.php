@@ -2,14 +2,14 @@
 
 namespace Afiphp\Webservices;
 
-use Exception;
-use DateTime;
-use Afiphp\Webservices\Contracts\WsFev1InvoiceRequest;
-use Afiphp\Entities\SalesPoint;
-use Afiphp\Entities\Invoice;
-use Afiphp\Entities\Entity;
-use Afiphp\Entities\Currency;
 use Afiphp\Entities\Cae;
+use Afiphp\Entities\Currency;
+use Afiphp\Entities\Entity;
+use Afiphp\Entities\Invoice;
+use Afiphp\Entities\SalesPoint;
+use Afiphp\Webservices\Contracts\WsFev1InvoiceRequest;
+use DateTime;
+use Exception;
 
 class WsFev1 extends AbstractWsAfipWithCredentials
 {
@@ -124,7 +124,7 @@ class WsFev1 extends AbstractWsAfipWithCredentials
     {
         return array_values(array_filter(
             $this->getSalesPoints(),
-            fn (SalesPoint $x) => !$x->isLocked
+            fn (SalesPoint $x) => ! $x->isLocked
         ));
     }
 

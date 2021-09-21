@@ -15,7 +15,8 @@ class Entity
         string $code,
         string $description,
         ?DateTime $fromDate,
-        ?DateTime $toDate)
+        ?DateTime $toDate
+    )
     {
         $this->code = $code;
         $this->description = $description;

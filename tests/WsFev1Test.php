@@ -1,11 +1,11 @@
 <?php
 
-use Afiphp\Webservices\WsFev1;
-use Afiphp\Exceptions\WsException;
-use Afiphp\Enums\InvoiceType;
-use Afiphp\Enums\IdentityDocumentType;
-use Afiphp\Entities\Invoice;
 use Afiphp\Entities\Customer;
+use Afiphp\Entities\Invoice;
+use Afiphp\Enums\IdentityDocumentType;
+use Afiphp\Enums\InvoiceType;
+use Afiphp\Exceptions\WsException;
+use Afiphp\Webservices\WsFev1;
 
 beforeEach(function () {
     $this->wsfe = new WsFev1('20920808582', __DIR__ . '/resources');

@@ -13,7 +13,8 @@ class Currency
     public function __construct(
         string $code,
         float $rate,
-        DateTime $rateAt = null)
+        DateTime $rateAt = null
+    )
     {
         $this->code = $code;
         $this->rate = $rate;
