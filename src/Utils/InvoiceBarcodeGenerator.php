@@ -2,8 +2,8 @@
 
 namespace Afiphp\Utils;
 
-use DateTime;
 use Afiphp\Entities\Cae;
+use DateTime;
 
 class InvoiceBarcodeGenerator
 {
@@ -17,7 +17,8 @@ class InvoiceBarcodeGenerator
         int $invoiceType,
         int $salesPoint,
         string $cae,
-        DateTime $dueDate)
+        DateTime $dueDate
+    )
     {
         $code = $issuerCuit
             . str_pad($invoiceType, 3, '0', STR_PAD_LEFT)
