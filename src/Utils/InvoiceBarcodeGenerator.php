@@ -20,8 +20,8 @@ class InvoiceBarcodeGenerator
         DateTime $dueDate)
     {
         $code = $issuerCuit
-            . substr($invoiceType + 100, 1)
-            . substr($salesPoint + 10000, 1)
+            . str_pad($invoiceType, 3, '0', STR_PAD_LEFT)
+            . str_pad($salesPoint, 5, '0', STR_PAD_LEFT)
             . $cae
             . $dueDate->format('Ymd');
 
