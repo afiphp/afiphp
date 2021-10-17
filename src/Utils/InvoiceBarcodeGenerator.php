@@ -18,8 +18,7 @@ class InvoiceBarcodeGenerator
         int $salesPoint,
         string $cae,
         DateTime $dueDate
-    )
-    {
+    ) {
         $code = $issuerCuit
             . str_pad($invoiceType, 3, '0', STR_PAD_LEFT)
             . str_pad($salesPoint, 5, '0', STR_PAD_LEFT)
