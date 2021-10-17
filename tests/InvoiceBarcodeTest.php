@@ -1,8 +1,8 @@
 <?php
 
-use Afiphp\Utils\InvoiceBarcodeGenerator;
-use Afiphp\Enums\InvoiceType;
 use Afiphp\Entities\Cae;
+use Afiphp\Enums\InvoiceType;
+use Afiphp\Utils\InvoiceBarcodeGenerator;
 
 it('can generate barcode', function () {
     expect(
