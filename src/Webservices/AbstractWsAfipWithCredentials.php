@@ -15,7 +15,7 @@ abstract class AbstractWsAfipWithCredentials extends AbstractWsAfip
     public function __construct(
         string $cuit,
         $paths,
-        string $passphrase = null,
+        ?string $passphrase = null,
         bool $sandbox = true,
         bool $debug = false
     ) {

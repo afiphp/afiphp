@@ -54,7 +54,7 @@ abstract class AbstractWsAfip
     public function __construct(
         string $cuit,
         $paths,
-        string $passphrase = null,
+        ?string $passphrase = null,
         bool $sandbox = true,
         bool $debug = false
     ) {
@@ -106,7 +106,7 @@ abstract class AbstractWsAfip
             throw new Exception("Unable to open {$this->privateKeyFilename}");
         }
 
-        $this->soapClient = new SoapClient($this->getWsdlFilename(), [
+        $this->soapClient = new SoapClient($this->getWsdl(), [
             'soap_version' => SOAP_1_2,
             'location' => $this->getSoapUrl(),
             'trace' => true,
@@ -150,9 +150,9 @@ abstract class AbstractWsAfip
     /**
      * Get Wsdl filename
      */
-    public function getWsdlFilename(): string
+    public function getWsdl(): string
     {
-        return __DIR__ . "/Wsdl/{$this->getServiceName()}-{$this->getEnvironment()}.xml";
+        return $this->getSoapUrl() . '?wsdl';
     }
 
     /**
