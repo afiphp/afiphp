@@ -1,12 +1,16 @@
 {
     "name": "afiphp/afiphp",
     "type": "library",
-    "description": "Web Services de AFIP",
-    "keywords": ["afip"],
+    "description": "Cliente PHP para los Web Services de ARCA (ex AFIP)",
+    "keywords": ["arca", "afip", "wsaa", "wsfe"],
     "homepage": "https://github.com/afiphp/afiphp",
     "license": "MIT",
     "require": {
-        "php": ">=7.4"
+        "php": "^8.3",
+        "ext-json": "*",
+        "ext-openssl": "*",
+        "ext-simplexml": "*",
+        "ext-soap": "*"
     },
     "authors": [
         {
@@ -20,7 +24,26 @@
         }
     },
     "require-dev": {
-        "pestphp/pest": "^1.18",
-        "symfony/var-dumper": "^5.3"
+        "carthage-software/mago": "^1.61",
+        "phpstan/phpstan": "^2.1",
+        "phpunit/phpunit": "^12.0"
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Tests\\": "tests/"
+        }
+    },
+    "config": {
+        "platform": {
+            "php": "8.3.0"
+        },
+        "sort-packages": true
+    },
+    "scripts": {
+        "format": "mago fmt",
+        "format:check": "mago fmt --check",
+        "test": "phpunit",
+        "test:arca": "phpunit --group arca",
+        "analyse": "phpstan analyse --memory-limit=512M"
     }
 }
