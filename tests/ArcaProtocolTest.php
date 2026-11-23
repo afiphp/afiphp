@@ -19,6 +19,7 @@ use Afiphp\Billing\ServicePeriod;
 use Afiphp\Billing\VatCondition;
 use Afiphp\Billing\VatRate;
 use Afiphp\Configuration;
+use Afiphp\Exceptions\ServiceUnavailable;
 use Afiphp\Exceptions\SoapException;
 use Afiphp\Internal\WebServices\WsFeV1;
 use DateTimeImmutable;
@@ -94,6 +95,49 @@ final class ArcaProtocolTest extends TestCase
     public static function scenarios(): array
     {
         return [['A', 1], ['B', 6], ['C', 11], ['note', 3]];
+    }
+
+    public function testUnreachableArcaBeforeReservingLeavesNothingPending(): void
+    {
+        $down = true;
+        $transport = new FakeTransport(static function (string $method, array $params) use (&$down): object {
+            if ($down) {
+                return new \SoapFault('HTTP', 'Could not connect to host');
+            }
+            if ($method === 'FECompUltimoAutorizado') {
+                return (object) ['CbteNro' => 49, 'PtoVta' => 2, 'CbteTipo' => 1];
+            }
+            return (object) ['FECAESolicitarResult' => FakeFiscalGateway::approved($params)];
+        });
+        $client = $this->client($transport);
+        $invoice = new Invoice(
+            2,
+            Receiver::business('20111111112', VatCondition::RESPONSABLE_INSCRIPTO),
+            [Item::netAmount(15000, VatRate::STANDARD_21)],
+            new DateTimeImmutable('today', new DateTimeZone('America/Argentina/Buenos_Aires')),
+        );
+        try {
+            $client->issue($invoice, 'sale');
+            self::fail('Expected ARCA to be unavailable.');
+        } catch (ServiceUnavailable) {
+        }
+        self::assertSame(['FECompUltimoAutorizado'], array_column($transport->calls, 0));
+        $down = false;
+        $result = $client->issue($invoice, 'sale');
+        self::assertSame(Outcome::AUTHORIZED, $result->outcome);
+        self::assertSame(50, $result->number);
+    }
+
+    public function testLastNumberReadsTheSeriesOfTheClassAndKind(): void
+    {
+        $transport = new FakeTransport(static fn (string $method, array $params): object => (object) [
+            'CbteNro' => 7,
+            'PtoVta' => $params['PtoVta'],
+            'CbteTipo' => $params['CbteTipo'],
+        ]);
+        self::assertSame(7, $this->client($transport)->lastNumber(InvoiceClass::C, InvoiceKind::CREDIT_NOTE, 3));
+        self::assertSame(13, $transport->calls[0][1]['CbteTipo']);
+        self::assertSame(3, $transport->calls[0][1]['PtoVta']);
     }
 
     public function testRealError602IsConsultationEvidenceNotAnImplicitRejectionOrAutomaticRetry(): void

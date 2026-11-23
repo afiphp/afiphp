@@ -15,6 +15,12 @@ class SoapException extends RuntimeException
         parent::__construct("SOAP Error: ({$fault->faultcode}) {$fault->faultstring}", 0, $fault);
     }
 
+    /** A failed HTTP exchange is a ConnectionException; any other fault was answered by the server. */
+    public static function fromFault(SoapFault $fault): self
+    {
+        return $fault->faultcode === 'HTTP' ? new ConnectionException($fault) : new self($fault);
+    }
+
     public function getFaultCode(): string
     {
         /** @var SoapFault $fault */

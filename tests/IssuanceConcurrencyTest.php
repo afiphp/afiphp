@@ -66,6 +66,11 @@ final class IssuanceConcurrencyTest extends TestCase
                             private string $state,
                         ) {}
 
+                        public function status(): \Afiphp\ServiceStatus
+                        {
+                            throw new \LogicException('Not used in this test.');
+                        }
+
                         public function lastNumber(int $type, int $salesPoint): int
                         {
                             usleep(10000); // Widen the overlap between workers.

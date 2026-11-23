@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Afiphp;
 
 use Afiphp\Billing\Invoice;
+use Afiphp\Billing\InvoiceClass;
 use Afiphp\Billing\InvoiceKind;
 use Afiphp\Billing\IssueResult;
 use Afiphp\Billing\Item;
@@ -13,12 +14,14 @@ use Afiphp\Billing\Preview;
 use Afiphp\Billing\Taxpayer;
 use Afiphp\Internal\Billing\FiscalGateway;
 use Afiphp\Internal\Billing\InvoiceCalculator;
+use Afiphp\Internal\Billing\InvoiceMapper;
 use Afiphp\Internal\Billing\IssuanceCoordinator;
 use Afiphp\Internal\WebServices\PadronA13;
 use Afiphp\Internal\WebServices\PadronA5;
 use Afiphp\Internal\WebServices\WsFeV1;
 use DateTimeImmutable;
 use DateTimeZone;
+use InvalidArgumentException;
 
 /** Public entry point. No ARCA codes, SOAP requests, or authentication calls required. */
 final class Arca
@@ -62,6 +65,28 @@ final class Arca
     public function cuitsByDni(string $dni): array
     {
         return $this->documents->cuitsByDni($dni);
+    }
+
+    /**
+     * WSFE's health report (FEDummy), without logging in. Throws a ServiceUnavailable exception
+     * when ARCA cannot be reached at all.
+     */
+    public function status(): ServiceStatus
+    {
+        return $this->gateway->status();
+    }
+
+    /**
+     * The last number ARCA authorized for a series. Read-only: it reserves nothing, and issue()
+     * reads it again. Needs the login, so it also proves the certificate and WSFE authorization.
+     */
+    public function lastNumber(InvoiceClass $class, InvoiceKind $kind, int $salesPoint): int
+    {
+        if ($salesPoint < 1 || $salesPoint > 99999) {
+            throw new InvalidArgumentException('The sales point must be between 1 and 99999.');
+        }
+
+        return $this->gateway->lastNumber(InvoiceMapper::type($class, $kind), $salesPoint);
     }
 
     /**

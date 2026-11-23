@@ -10,6 +10,7 @@ use Afiphp\Exceptions\InvalidResponseException;
 use Afiphp\Internal\Billing\FiscalGateway;
 use Afiphp\Internal\WebServices\Contracts\SoapTransport;
 use Afiphp\Internal\WebServices\Contracts\TicketProvider;
+use Afiphp\ServiceStatus;
 use DateTimeImmutable;
 use InvalidArgumentException;
 use RuntimeException;
@@ -36,6 +37,21 @@ final class WsFeV1 extends AbstractWsAfip implements FiscalGateway
         }
 
         return parent::execute($method, $params);
+    }
+
+    public function status(): ServiceStatus
+    {
+        $response = $this->execute('FEDummy');
+        $servers = [];
+        foreach (['AppServer', 'DbServer', 'AuthServer'] as $field) {
+            $value = $response->{$field} ?? null;
+            if (!is_string($value)) {
+                throw new InvalidResponseException('ARCA returned an incomplete service status.', $response, 'FEDummy');
+            }
+            $servers[] = $value;
+        }
+
+        return new ServiceStatus(...$servers);
     }
 
     public function lastNumber(int $type, int $salesPoint): int

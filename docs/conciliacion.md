@@ -77,11 +77,19 @@ Los fallos de red o autenticación durante la autorización se devuelven como
 `INDETERMINATE`. Otros fallos (por ejemplo, de almacenamiento) lanzan
 excepciones. **Una excepción no es un rechazo.**
 
+Si ARCA no responde antes de reservar el número (al iniciar sesión o al leer el
+último número), `issue()` lanza `ServiceUnavailable` y no guarda nada: repetir
+la misma llamada más tarde es seguro. Si ARCA no responde a la consulta de
+`recover()` o `retry()`, la operación sigue `INDETERMINATE` con `reason`
+`lookup_failed`.
+
 ```php
-use Afiphp\Exceptions\{IdempotencyConflict, IssuancePersistenceException};
+use Afiphp\Exceptions\{IdempotencyConflict, IssuancePersistenceException, ServiceUnavailable};
 
 try {
     $result = $arca->issue($invoice, $operation);
+} catch (ServiceUnavailable $e) {
+    // ARCA no responde o tiene un error interno. Avisá y repetí la misma llamada más tarde.
 } catch (IdempotencyConflict $e) {
     // El ID ya existe con otros datos. Recuperá los originales.
 } catch (IssuancePersistenceException $e) {
@@ -91,6 +99,9 @@ try {
     // Conservá factura e ID. No emitas con otro ID.
 }
 ```
+
+Para mostrar el estado del servicio antes de emitir, `$arca->status()` consulta
+`FEDummy` sin iniciar sesión.
 
 No envuelvas `issue()` en un mecanismo de reintentos automáticos. Si
 `recover()` no conoce la operación, revisá CUIT, ambiente y almacenamiento.

@@ -13,6 +13,12 @@ final class FakeFiscalGateway implements FiscalGateway
     public ?\Closure $onAuthorize = null;
     public ?\Closure $onLookup = null;
 
+    public function status(): \Afiphp\ServiceStatus
+    {
+        $this->calls[] = ['status'];
+        return new \Afiphp\ServiceStatus('OK', 'OK', 'OK');
+    }
+
     public function lastNumber(int $type, int $salesPoint): int
     {
         $this->calls[] = ['last', $type, $salesPoint];

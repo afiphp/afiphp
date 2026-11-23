@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace Tests;
 
+use Afiphp\Exceptions\ConnectionException;
 use Afiphp\Exceptions\InvalidResponseException;
+use Afiphp\Exceptions\ServiceErrorException;
+use Afiphp\Exceptions\ServiceUnavailable;
 use Afiphp\Exceptions\SoapException;
 use Afiphp\Exceptions\WsException;
 use Afiphp\Internal\WebServices\Ticket;
@@ -27,6 +30,75 @@ final class InfrastructureTest extends TestCase
         self::assertSame('OK', $service->execute('FEDummy')->AppServer);
         self::assertSame(0, $provider->calls);
         self::assertArrayNotHasKey('Auth', $transport->calls[0][1]);
+    }
+
+    public function testStatusReadsTheDummyWithoutLoggingIn(): void
+    {
+        $provider = new FakeTicketProvider();
+        $transport = new FakeTransport(static fn (): object => (object) ['FEDummyResult' => (object) [
+            'AppServer' => 'OK',
+            'DbServer' => 'No disponible',
+            'AuthServer' => 'OK',
+        ]]);
+        $status = $this->wsfe($transport, $provider)->status();
+        self::assertSame('No disponible', $status->dbServer);
+        self::assertFalse($status->isAvailable());
+        self::assertSame(0, $provider->calls);
+    }
+
+    public function testIncompleteStatusIsAProtocolFailure(): void
+    {
+        $transport = new FakeTransport(static fn (): object => (object) ['FEDummyResult' => (object) [
+            'AppServer' => 'OK',
+        ]]);
+        $this->expectException(InvalidResponseException::class);
+        $this->wsfe($transport)->status();
+    }
+
+    public function testFailedHttpExchangeIsAnUnavailableService(): void
+    {
+        $transport = new FakeTransport(static fn (): object => new \SoapFault('HTTP', 'Could not connect to host'));
+        try {
+            $this->wsfe($transport)->status();
+            self::fail('Expected a connection failure.');
+        } catch (ConnectionException $exception) {
+            self::assertInstanceOf(ServiceUnavailable::class, $exception);
+            self::assertSame('HTTP', $exception->getFaultCode());
+        }
+    }
+
+    public function testFaultAnsweredByTheServerIsNotAnUnavailableService(): void
+    {
+        $transport = new FakeTransport(static fn (): object => new \SoapFault('Server', 'Invalid request'));
+        try {
+            $this->wsfe($transport)->lookup(1, 2, 50);
+            self::fail('Expected a SOAP fault.');
+        } catch (SoapException $exception) {
+            self::assertNotInstanceOf(ServiceUnavailable::class, $exception);
+        }
+    }
+
+    public function testWsfeInternalErrorIsAnUnavailableServiceButValidationErrorsAreNot(): void
+    {
+        $error = static fn (int $code): FakeTransport => new FakeTransport(static fn (): object => (object) [
+            'FECompConsultarResult' => (object) ['Errors' => (object) ['Err' => [(object) [
+                'Code' => $code,
+                'Msg' => 'Error',
+            ]]]],
+        ]);
+        try {
+            $this->wsfe($error(501))->lookup(1, 2, 50);
+            self::fail('Expected an internal error.');
+        } catch (ServiceErrorException $exception) {
+            self::assertInstanceOf(WsException::class, $exception);
+            self::assertSame(501, $exception->getCode());
+        }
+        try {
+            $this->wsfe($error(10016))->lookup(1, 2, 50);
+            self::fail('Expected a validation error.');
+        } catch (WsException $exception) {
+            self::assertNotInstanceOf(ServiceUnavailable::class, $exception);
+        }
     }
 
     public function testRefreshesExpiredCredentialsWithoutLosingAStillValidTicketEarly(): void

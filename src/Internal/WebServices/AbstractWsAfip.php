@@ -6,6 +6,7 @@ namespace Afiphp\Internal\WebServices;
 
 use Afiphp\Configuration;
 use Afiphp\Exceptions\InvalidResponseException;
+use Afiphp\Exceptions\ServiceErrorException;
 use Afiphp\Exceptions\SoapException;
 use Afiphp\Exceptions\WsException;
 use Afiphp\Internal\WebServices\Contracts\SoapTransport;
@@ -70,7 +71,7 @@ abstract class AbstractWsAfip
             }
         }
         if ($response instanceof SoapFault) {
-            throw new SoapException($response);
+            throw SoapException::fromFault($response);
         }
         $result = property_exists($response, "{$method}Result") ? $response->{"{$method}Result"} : $response;
         if (!is_object($result)) {
@@ -83,12 +84,12 @@ abstract class AbstractWsAfip
             } catch (UnexpectedValueException $exception) {
                 throw new InvalidResponseException('Malformed ARCA error response.', $result, $method, $exception);
             }
-            throw new WsException(
-                'ARCA Error: ' . implode(PHP_EOL, $messages),
-                (int) $errors[0]->Code,
-                errors: $errors,
-                response: $result,
-            );
+            $code = (int) $errors[0]->Code;
+            $class = $this->service() === self::WSFE && in_array($code, ServiceErrorException::CODES, true)
+                ? ServiceErrorException::class
+                : WsException::class;
+
+            throw new $class('ARCA Error: ' . implode(PHP_EOL, $messages), $code, errors: $errors, response: $result);
         }
         if (!property_exists($result, 'ResultGet')) {
             return $result;

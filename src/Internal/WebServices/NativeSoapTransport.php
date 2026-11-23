@@ -61,13 +61,13 @@ final class NativeSoapTransport implements SoapTransport
             // Expose the structured exception, not warning output in an application's response.
             $response = @$this->client()->__soapCall($method, [$params]);
         } catch (SoapFault $fault) {
-            throw new SoapException($fault);
+            throw SoapException::fromFault($fault);
         } finally {
             ini_set('default_socket_timeout', $previousTimeout);
         }
 
         if ($response instanceof SoapFault) {
-            throw new SoapException($response);
+            throw SoapException::fromFault($response);
         }
 
         if (!is_object($response)) {

@@ -19,11 +19,17 @@ fechas, `DateTimeImmutable`. Salvo que se indique otro, los tipos están en
 | `fullCreditNote(string $originalOperation, ?DateTimeImmutable $date = null)` | `Invoice` | Arma una nota de crédito total. No emite. |
 | `creditNote(string $originalOperation, array $items, array $otherTaxes = [], ?DateTimeImmutable $date = null)` | `Invoice` | Arma una nota de crédito parcial. No emite. |
 | `debitNote(string $originalOperation, array $items, array $otherTaxes = [], ?DateTimeImmutable $date = null)` | `Invoice` | Arma una nota de débito. No emite. |
+| `status()` | `Afiphp\ServiceStatus` | Estado de WSFE (`FEDummy`). No inicia sesión. |
+| `lastNumber(InvoiceClass $class, InvoiceKind $kind, int $salesPoint)` | `int` | Último número autorizado de la serie. No reserva. |
 | `dollarRate(?DateTimeImmutable $date = null)` | `string` | Cotización publicada por ARCA. |
 | `taxpayer(string $cuit)` | `?Taxpayer` | Consulta el Padrón A5. |
 | `cuitsByDni(string $dni)` | `list<string>` | Consulta el Padrón A13. |
 
 `recover()` y `retry()` lanzan `InvalidArgumentException` si el ID no existe.
+
+`status()` no usa el certificado: un servicio disponible todavía puede rechazar
+el login o la CUIT. `lastNumber()` sí inicia sesión, así que también prueba el
+certificado y la autorización de `wsfe`.
 
 ## Configuración
 
@@ -162,6 +168,11 @@ Expone `amount`, `vat` (`?VatRate`) e `includesVat`.
 | `total` | `int` | Suma de todo lo anterior. |
 | `vatByRate` | `list<VatSubtotal>` | `rate`, `base` y `amount` por alícuota. Vacío en C. |
 
+### ServiceStatus (`Afiphp`)
+
+Campos `appServer`, `dbServer` y `authServer` (`string`, tal como los informa
+ARCA). `isAvailable()` es `true` cuando los tres dicen `OK`.
+
 ### Taxpayer
 
 Campos: `cuit`, `name`, `personType`, `vatCondition` (`?VatCondition`),
@@ -192,7 +203,10 @@ Las propias están en `Afiphp\Exceptions`.
 | `IdempotencyConflict` | El ID ya existe con otros datos. |
 | `IssuancePersistenceException` | Hubo resultado (`result`) pero no se pudo guardar. |
 | `SoapException` | Fallo de transporte. `getFaultCode()`, `getPrevious()`. |
+| `ConnectionException` | `SoapException` sin respuesta de ARCA: sin conexión, timeout o página de error HTTP. |
 | `WsException` | Error del servicio. `getErrors()`, `getResponse()`. |
+| `ServiceErrorException` | `WsException` con un error interno de WSFE (500, 501 o 502). |
+| `ServiceUnavailable` | Interfaz de `ConnectionException` y `ServiceErrorException`: ARCA no pudo procesar el pedido. |
 | `InvalidResponseException` | Respuesta inválida. `getResponse()`, `getOperation()`. |
 | `LogicException` | Uso no permitido del objeto. |
 | `RuntimeException` | Fallos de almacenamiento, bloqueos o secuencia. |
