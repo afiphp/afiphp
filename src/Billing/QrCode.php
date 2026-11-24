@@ -6,15 +6,17 @@ namespace Afiphp\Billing;
 
 use Afiphp\Internal\Billing\Amounts;
 use Afiphp\Internal\Billing\InvoiceMapper;
-use Afiphp\Internal\Billing\QrCode as Payload;
 use InvalidArgumentException;
 
 /**
- * RG 4892 QR URL for printing a voucher that was authorized earlier, from the data the application kept.
- * An issued result already carries it in $result->qr.
+ * RG 4892 QR URL of an authorized voucher. An issued result already carries it in $result->qr;
+ * this builds it again from the data the application kept. Numbers are written from exact
+ * decimal strings, never through floats.
  */
 final class QrCode
 {
+    public const URL = 'https://www.arca.gob.ar/fe/qr/';
+
     /**
      * @param int $total Integer cents.
      * @param Receiver|null $receiver Optional in RG 4892: omit it when the receiver data may have changed.
@@ -35,19 +37,35 @@ final class QrCode
         $fields = [
             'ver' => '1',
             'fecha' => json_encode($voucher->date->format('Y-m-d'), JSON_THROW_ON_ERROR),
-            'cuit' => Payload::integer($issuerCuit),
-            'ptoVta' => Payload::integer($voucher->salesPoint),
-            'tipoCmp' => Payload::integer(InvoiceMapper::type($voucher->class, $voucher->kind)),
-            'nroCmp' => Payload::integer($voucher->number),
+            'cuit' => self::integer($issuerCuit),
+            'ptoVta' => self::integer($voucher->salesPoint),
+            'tipoCmp' => self::integer(InvoiceMapper::type($voucher->class, $voucher->kind)),
+            'nroCmp' => self::integer($voucher->number),
             'importe' => Amounts::decimal($total),
             'moneda' => json_encode(InvoiceMapper::currency($currency), JSON_THROW_ON_ERROR),
             'ctz' => $currency->exchangeRate,
         ];
         if ($receiver !== null) {
-            $fields['tipoDocRec'] = Payload::integer(InvoiceMapper::documentType($receiver->documentType));
-            $fields['nroDocRec'] = Payload::integer($receiver->document);
+            $fields['tipoDocRec'] = self::integer(InvoiceMapper::documentType($receiver->documentType));
+            $fields['nroDocRec'] = self::integer($receiver->document);
         }
+        $fields['tipoCodAut'] = '"E"';
+        $fields['codAut'] = self::integer($cae);
+        $json =
+            '{'
+            . implode(',', array_map(
+                static fn (string $name, string $value): string => "\"{$name}\":{$value}",
+                array_keys($fields),
+                $fields,
+            ))
+            . '}';
 
-        return Payload::encode([...$fields, 'tipoCodAut' => '"E"', 'codAut' => Payload::integer($cae)]);
+        return self::URL . '?p=' . base64_encode($json);
+    }
+
+    /** A JSON integer token without leading zeros. */
+    private static function integer(int|string $value): string
+    {
+        return ltrim((string) $value, '0') ?: '0';
     }
 }

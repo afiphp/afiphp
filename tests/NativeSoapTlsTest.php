@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Tests;
 
-use Afiphp\Exceptions\SoapException;
+use Afiphp\Exceptions\ConfigurationError;
 use Afiphp\Internal\WebServices\NativeSoapTransport;
 use Afiphp\NetworkOptions;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -98,8 +98,8 @@ final class NativeSoapTlsTest extends TestCase
                 try {
                     $transport->call('FEDummy', []);
                     self::fail('An untrusted TLS certificate was accepted.');
-                } catch (SoapException $exception) {
-                    self::assertNotNull($exception->getPrevious());
+                } catch (ConfigurationError $exception) {
+                    self::assertStringContainsString('TLS', $exception->getMessage());
                 }
             }
         } finally {

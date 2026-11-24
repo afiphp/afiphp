@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Afiphp;
 
+use DateTimeImmutable;
 use InvalidArgumentException;
 use OpenSSLAsymmetricKey;
 use OpenSSLCertificate;
@@ -16,6 +17,8 @@ final readonly class Credentials
     private OpenSSLAsymmetricKey $privateKey;
     private string $ticketKey;
     public string $fingerprint;
+    public DateTimeImmutable $validFrom;
+    public DateTimeImmutable $expiresAt;
 
     public function __construct(
         #[\SensitiveParameter]
@@ -54,6 +57,15 @@ final readonly class Credentials
             throw new InvalidArgumentException('Unable to fingerprint the certificate.');
         }
 
+        $info = openssl_x509_parse($parsedCertificate);
+        if (
+            !is_array($info)
+            || !is_int($info['validFrom_time_t'] ?? null)
+            || !is_int($info['validTo_time_t'] ?? null)
+        ) {
+            throw new InvalidArgumentException('Unable to read the certificate validity.');
+        }
+
         if (!openssl_pkey_export($parsedKey, $exported)) {
             throw new InvalidArgumentException('Unable to derive the ticket encryption key.');
         }
@@ -61,8 +73,18 @@ final readonly class Credentials
         $this->certificate = $parsedCertificate;
         $this->privateKey = $parsedKey;
         $this->fingerprint = $fingerprint;
+        $this->validFrom = new DateTimeImmutable('@' . $info['validFrom_time_t']);
+        $this->expiresAt = new DateTimeImmutable('@' . $info['validTo_time_t']);
         // Only the holder of the private key can read cached WSAA tickets.
         $this->ticketKey = hash_hkdf('sha256', $exported, 32, 'afiphp:wsaa-ticket:v1');
+    }
+
+    /** Whether the certificate is valid at $at (now by default). ARCA rejects it outside that window. */
+    public function isValidAt(?DateTimeImmutable $at = null): bool
+    {
+        $at ??= new DateTimeImmutable();
+
+        return $at >= $this->validFrom && $at < $this->expiresAt;
     }
 
     /** @internal AES-256-GCM key for cached WSAA tickets, derived from the private key. */
@@ -112,7 +134,11 @@ final readonly class Credentials
 
     public function __debugInfo(): array
     {
-        return ['fingerprint' => $this->fingerprint, 'privateKey' => '[REDACTED]'];
+        return [
+            'fingerprint' => $this->fingerprint,
+            'expiresAt' => $this->expiresAt->format(DATE_ATOM),
+            'privateKey' => '[REDACTED]',
+        ];
     }
 
     public function __serialize(): array

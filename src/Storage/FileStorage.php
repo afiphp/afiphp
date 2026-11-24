@@ -4,26 +4,18 @@ declare(strict_types=1);
 
 namespace Afiphp\Storage;
 
-use Afiphp\Internal\Storage\FileJournal;
 use Afiphp\Internal\Storage\PrivateFiles;
-use InvalidArgumentException;
 use RuntimeException;
 
 /**
  * One private, persistent root on a local POSIX filesystem, shared by all issuing workers.
- * Not a distributed lock or an ephemeral cache.
  */
 final class FileStorage implements Storage
 {
     private string $directory;
 
-    public function __construct(
-        string $directory,
-        private int $lockTimeout = 120,
-    ) {
-        if ($lockTimeout < 1) {
-            throw new InvalidArgumentException('Lock timeout must be positive.');
-        }
+    public function __construct(string $directory)
+    {
         PrivateFiles::ensurePrivateDirectory($directory);
         $resolved = realpath($directory);
         if ($resolved === false) {
@@ -31,24 +23,7 @@ final class FileStorage implements Storage
         }
         $this->directory = $resolved;
         PrivateFiles::ensurePrivateDirectory($resolved . '/tickets');
-        PrivateFiles::ensurePrivateDirectory($resolved . '/issuance');
-    }
-
-    public function exclusively(string $scope, callable $callback): mixed
-    {
-        $base = $this->directory . '/issuance/' . hash('sha256', $scope);
-
-        return PrivateFiles::withLock($base . '.lock', $this->lockTimeout, static function () use (
-            $base,
-            $callback,
-        ): mixed {
-            $journal = new FileJournal($base . '.json');
-            try {
-                return $callback($journal);
-            } finally {
-                $journal->close();
-            }
-        });
+        PrivateFiles::ensurePrivateDirectory($resolved . '/locks');
     }
 
     public function readTicket(string $key): ?string
@@ -72,6 +47,15 @@ final class FileStorage implements Storage
     public function withTicketLock(string $key, int $timeout, callable $callback): mixed
     {
         return PrivateFiles::withLock($this->ticketPath($key) . '.lock', $timeout, $callback);
+    }
+
+    public function withSalesPointLock(string $key, int $timeout, callable $callback): mixed
+    {
+        return PrivateFiles::withLock(
+            $this->directory . '/locks/' . hash('sha256', 'sales-point:' . $key) . '.lock',
+            $timeout,
+            $callback,
+        );
     }
 
     public function writeDiagnostic(string $key, string $xml): void

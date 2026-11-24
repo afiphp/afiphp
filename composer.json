@@ -10,7 +10,8 @@
         "ext-json": "*",
         "ext-openssl": "*",
         "ext-simplexml": "*",
-        "ext-soap": "*"
+        "ext-soap": "*",
+        "psr/log": "^3.0"
     },
     "authors": [
         {
@@ -18,6 +19,7 @@
             "email": "claudioe0407@gmail.com"
         }
     ],
+    "bin": ["bin/afiphp"],
     "autoload": {
         "psr-4": {
             "Afiphp\\": "src"

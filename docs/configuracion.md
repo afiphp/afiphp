@@ -21,6 +21,40 @@ producción, con **Administración de Certificados Digitales** y
 [Web Services](https://www.arca.gob.ar/ws/) y
 [Factura electrónica](https://www.arca.gob.ar/fe/).
 
+### Con el comando `afiphp`
+
+El paquete instala `vendor/bin/afiphp`, que resuelve la parte manual. Ninguno
+de sus comandos emite comprobantes ni imprime claves o tickets.
+
+```bash
+vendor/bin/afiphp init --cuit 20111111112                    # homologación
+vendor/bin/afiphp init --cuit 20111111112 --env production
+```
+
+`init` escribe `arca-homologation.key` (RSA 2048, `0600`) y
+`arca-homologation.csr`, con el subject que pide ARCA (`C=AR`, `O`, `CN` y
+`serialNumber=CUIT …`), e imprime los pasos exactos en WSASS o en el
+Administrador de Relaciones. Si hay un `.gitignore` en el directorio, le agrega
+`arca-*.key` y `arca-*.crt`. No pisa archivos existentes. Opciones: `--name`
+(alias del certificado, `afiphp` por defecto), `--org` (la CUIT por defecto) y
+`--dir`.
+
+Con el certificado guardado como `arca-homologation.crt`:
+
+```bash
+vendor/bin/afiphp check --cuit 20111111112 --sales-point 2
+```
+
+`check` prueba cada capa en orden (certificado y vencimiento, servicio de
+ARCA, login y habilitación de `wsfe`, puntos de venta) y, si una falla, dice
+cuál y qué hacer. Acepta `--cert`, `--key`, `--env` y `--storage`, o las
+variables `ARCA_CUIT`, `ARCA_CERT`, `ARCA_KEY`, `ARCA_KEY_PASSPHRASE`,
+`ARCA_ENVIRONMENT`, `ARCA_SALES_POINT` y `ARCA_STORAGE`. Sin `--storage`,
+guarda la sesión de ARCA en un directorio temporal privado: si después la
+aplicación usa otro almacenamiento, su primer login puede fallar con
+`coe.alreadyAuthenticated` por unos minutos. Pasale el `--storage` de la
+aplicación para evitarlo.
+
 ### Padrón (opcional)
 
 Solo si querés consultar datos del receptor. Requieren habilitaciones aparte:
@@ -62,8 +96,12 @@ $arca = new Arca(new Configuration(
 
 `Credentials` recibe **contenido PEM, no rutas**: un certificado y una clave.
 Verifica localmente que la clave corresponda al certificado y, si no, lanza
-`InvalidArgumentException`. No valida vigencia, cadena de confianza ni
-habilitaciones: eso lo hace ARCA.
+`InvalidArgumentException`. No valida cadena de confianza ni habilitaciones:
+eso lo hace ARCA.
+
+El certificado vence (los de ARCA duran unos dos años). `expiresAt` dice
+cuándo e `isValidAt()` si está vigente; `check()` lanza `ConfigurationError`
+si venció y registra una advertencia en el logger los últimos 30 días.
 
 - No guarda la contraseña ni escribe la clave en disco. No se puede serializar.
 - `fingerprint` es el SHA-256 del certificado en DER.
@@ -93,15 +131,49 @@ $network = new NetworkOptions(
 No hay reintentos automáticos. El transporte cambia temporalmente
 `default_socket_timeout`, así que usá un runtime síncrono.
 
+`salesPointLockTimeout` (120 segundos) es cuánto espera una emisión a que
+termine otra en el mismo punto de venta: ver
+[emisiones simultáneas](conciliacion.md#emisiones-simultáneas).
+
+### Logs
+
+`Configuration` acepta cualquier logger PSR-3 (Monolog, el de Laravel o
+Symfony):
+
+```php
+new Configuration(..., logger: $logger);
+```
+
+| Nivel | Qué registra |
+|---|---|
+| `debug` | Cada llamada a ARCA: servicio, operación, resultado y duración. Sin el contenido. |
+| `info` | Logins de WSAA y comprobantes autorizados (número y CAE). |
+| `warning` | Comprobantes rechazados, con las observaciones de ARCA; emisiones que no salieron porque ARCA no respondió o por el bloqueo de otra emisión; un certificado por vencer. |
+| `error` | Emisiones sin confirmar, con el número que hay que guardar, y configuración rechazada por ARCA (certificado, habilitación, reloj o TLS). |
+
+Nunca registra certificados, claves, tickets ni datos del receptor.
+
+## Verificar la instalación
+
+```php
+$arca->check(2); // Lanza ArcaUnavailable o ConfigurationError si no se puede facturar.
+```
+
+Prueba la vigencia del certificado, el servicio, el login y la habilitación de
+`wsfe` para la CUIT, sin emitir nada. Con un punto de venta, además verifica que
+ARCA lo liste para web services y que no esté bloqueado ni dado de baja. La
+homologación suele no listar ninguno y acepta cualquiera; producción, no.
+
+`$arca->salesPoints()` lista los puntos de venta que ARCA informa, con su tipo
+de emisión, si están bloqueados y su fecha de baja.
+
 ## Migración
 
-La biblioteca no migra registros automáticamente. Para incorporarla a un
-sistema que ya emite:
+afiphp no guarda nada sobre las facturas: la numeración la lleva ARCA. Podés
+empezar a usarla en un sistema que ya emite sin migrar datos. Si el sistema
+anterior dejó una factura sin confirmar, pasá su número como `previousNumber`
+la primera vez. Con [`voucher()`](facturacion.md#consultar-comprobantes) podés
+leer lo que ese sistema emitió, y con `fullCreditNote()`, anularlo.
 
-1. Detené todos los emisores.
-2. Respaldá las emisiones y sesiones existentes.
-3. Verificá que los registros sean compatibles.
-4. Reanudá cuando todos los emisores compartan el mismo almacenamiento.
-
-No cambies de directorio ni muevas registros como si fueran caché. Ver
-[almacenamiento](almacenamiento.md).
+Antes de emitir el primer comprobante real, repasá
+[Pasar a producción](produccion.md).

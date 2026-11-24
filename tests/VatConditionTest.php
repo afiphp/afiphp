@@ -12,25 +12,6 @@ use PHPUnit\Framework\TestCase;
 
 final class VatConditionTest extends TestCase
 {
-    public function testPublicCasesUseArgentineFiscalNamesWithoutEnglishAliases(): void
-    {
-        self::assertSame(
-            [
-                'RESPONSABLE_INSCRIPTO',
-                'MONOTRIBUTISTA',
-                'MONOTRIBUTISTA_SOCIAL',
-                'MONOTRIBUTO_TRABAJADOR_INDEPENDIENTE_PROMOVIDO',
-                'EXENTO',
-                'NO_ALCANZADO',
-                'CONSUMIDOR_FINAL',
-            ],
-            array_map(static fn (VatCondition $condition): string => $condition->name, VatCondition::cases()),
-        );
-        foreach (['REGISTERED', 'MONOTAX', 'EXEMPT', 'NOT_SUBJECT', 'FINAL_CONSUMER'] as $oldCase) {
-            self::assertFalse(defined(VatCondition::class . '::' . $oldCase));
-        }
-    }
-
     #[DataProvider('fiscalConditions')]
     public function testFiscalCodesDoNotChangeWithPublicNames(VatCondition $condition, int $code): void
     {

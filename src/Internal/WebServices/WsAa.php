@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Afiphp\Internal\WebServices;
 
+use Afiphp\Exceptions\ArcaUnavailable;
 use Afiphp\Internal\WebServices\Contracts\TicketProvider;
 use DateTimeImmutable;
 use Exception;
@@ -40,9 +41,13 @@ class WsAa extends AbstractWsAfip implements TicketProvider
                     $xml = $this->login($this->sign($this->loginRequest($serviceName)));
                     $ticket = self::parse($xml);
                     if (!$ticket->isValid()) {
-                        throw new RuntimeException('WSAA returned an expired ticket.');
+                        throw new ArcaUnavailable('WSAA returned an expired ticket.', true);
                     }
                     $storage->writeTicket($key, $this->seal($xml, $key));
+                    $this->configuration->logger->info('WSAA login for {service}, valid until {expires}', [
+                        'service' => $serviceName,
+                        'expires' => $ticket->expiresAt?->format(DATE_ATOM) ?? 'unknown',
+                    ]);
 
                     return $ticket;
                 },
@@ -64,7 +69,7 @@ class WsAa extends AbstractWsAfip implements TicketProvider
     {
         $response = $this->execute('loginCms', ['in0' => $signature]);
         if (!isset($response->loginCmsReturn) || !is_string($response->loginCmsReturn)) {
-            throw new RuntimeException('WSAA did not return a login ticket.');
+            throw new ArcaUnavailable('WSAA did not return a login ticket.', true);
         }
 
         return $response->loginCmsReturn;

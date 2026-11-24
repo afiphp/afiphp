@@ -7,8 +7,9 @@ namespace Tests;
 use Afiphp\Arca;
 use Afiphp\Billing\DocumentType;
 use Afiphp\Billing\VatCondition;
+use Afiphp\Exceptions\ArcaUnavailable;
 use Afiphp\Exceptions\InvalidResponseException;
-use Afiphp\Exceptions\SoapException;
+use Afiphp\Internal\WebServices\Failures;
 use Afiphp\Internal\WebServices\PadronA13;
 use Afiphp\Internal\WebServices\PadronA5;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -97,14 +98,17 @@ final class PadronTest extends TestCase
         self::assertNull($this->padron($notFound)->taxpayer('20111111112'));
 
         $fault = new FakeTransport(
-            static fn (): object => throw new SoapException(new \SoapFault('Server', 'La clave solicitada no existe')),
+            static fn (): object => throw Failures::fromFault(new \SoapFault(
+                'Server',
+                'La clave solicitada no existe',
+            )),
         );
         self::assertNull($this->padron($fault)->taxpayer('20111111112'));
 
         $unavailable = new FakeTransport(
-            static fn (): object => throw new SoapException(new \SoapFault('Server', 'Servicio no disponible')),
+            static fn (): object => throw Failures::fromFault(new \SoapFault('Server', 'Servicio no disponible')),
         );
-        $this->expectException(SoapException::class);
+        $this->expectException(ArcaUnavailable::class);
         $this->padron($unavailable)->taxpayer('20111111112');
     }
 
@@ -153,7 +157,7 @@ final class PadronTest extends TestCase
         self::assertSame([], $this->documents($empty)->cuitsByDni('11111111'));
 
         $fault = new FakeTransport(
-            static fn (): object => throw new SoapException(new \SoapFault(
+            static fn (): object => throw Failures::fromFault(new \SoapFault(
                 'Server',
                 'No existe persona con ese documento',
             )),

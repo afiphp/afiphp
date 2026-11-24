@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Afiphp\Internal\Storage;
 
+use Afiphp\Exceptions\LockTimeout;
 use RuntimeException;
 
 /** @internal Files here can contain fiscal data or authentication tickets. */
@@ -95,7 +96,7 @@ final class PrivateFiles
             $deadline = microtime(true) + $timeout;
             while (!flock($handle, LOCK_EX | LOCK_NB)) {
                 if (microtime(true) >= $deadline) {
-                    throw new RuntimeException("Timeout acquiring lock: {$filename}");
+                    throw new LockTimeout("Another worker held the lock for more than {$timeout} seconds.");
                 }
                 usleep(10000);
             }

@@ -4,8 +4,7 @@ declare(strict_types=1);
 
 namespace Tests;
 
-use Afiphp\Exceptions\SoapException;
-use Afiphp\Exceptions\WsException;
+use Afiphp\Exceptions\ArcaUnavailable;
 use Afiphp\Internal\WebServices\NativeSoapTransport;
 use Afiphp\NetworkOptions;
 
@@ -47,9 +46,9 @@ final class NativeSoapTimeoutTest extends TestCase
             try {
                 $transport->call('FEDummy', []);
                 self::fail('Expected the local read timeout.');
-            } catch (SoapException $exception) {
+            } catch (ArcaUnavailable $exception) {
                 self::assertLessThan(2.0, microtime(true) - $started);
-                self::assertNotInstanceOf(WsException::class, $exception);
+                self::assertTrue($exception->sent);
             }
             self::assertSame('8', ini_get('default_socket_timeout'));
         } finally {

@@ -13,7 +13,6 @@ use Afiphp\Billing\OtherTaxType;
 use Afiphp\Billing\Preview;
 use Afiphp\Billing\VatCondition;
 use Afiphp\Billing\VatRate;
-use Afiphp\Billing\VatSubtotal;
 use DateTimeImmutable;
 use DateTimeZone;
 use InvalidArgumentException;
@@ -47,20 +46,6 @@ final class InvoiceMapper
             VatCondition::MONOTRIBUTISTA_SOCIAL => 13,
             VatCondition::MONOTRIBUTO_TRABAJADOR_INDEPENDIENTE_PROMOVIDO => 16,
             VatCondition::NO_ALCANZADO => 15,
-        };
-    }
-
-    /** Persisted identity tokens: changing public case names must not change an operation's fingerprint. */
-    public static function issuerFingerprintToken(VatCondition $condition): string
-    {
-        return match ($condition) {
-            VatCondition::RESPONSABLE_INSCRIPTO => 'REGISTERED',
-            VatCondition::MONOTRIBUTISTA => 'MONOTAX',
-            VatCondition::MONOTRIBUTISTA_SOCIAL => 'SOCIAL_MONOTAX',
-            VatCondition::MONOTRIBUTO_TRABAJADOR_INDEPENDIENTE_PROMOVIDO => 'PROMOTED_MONOTAX',
-            VatCondition::EXENTO => 'EXEMPT',
-            VatCondition::NO_ALCANZADO => 'NOT_SUBJECT',
-            VatCondition::CONSUMIDOR_FINAL => 'FINAL_CONSUMER',
         };
     }
 
@@ -101,30 +86,6 @@ final class InvoiceMapper
             }
         }
         throw new InvalidArgumentException('Unknown WSFE VAT rate code.');
-    }
-
-    /** The totals of a request this mapper produced: the inverse of detail() for amounts only. */
-    public static function totals(array $detail, InvoiceClass $class): Preview
-    {
-        $amount = static fn (string $field): int => Amounts::fromDecimal($detail[$field]);
-
-        return new Preview(
-            $class,
-            $amount('ImpNeto'),
-            $amount('ImpIVA'),
-            $amount('ImpOpEx'),
-            $amount('ImpTotConc'),
-            $amount('ImpTotal'),
-            array_map(
-                static fn (array $row): VatSubtotal => new VatSubtotal(
-                    self::rateFromCode($row['Id']),
-                    Amounts::fromDecimal($row['BaseImp']),
-                    Amounts::fromDecimal($row['Importe']),
-                ),
-                $detail['Iva']['AlicIva'] ?? [],
-            ),
-            $amount('ImpTrib'),
-        );
     }
 
     public static function taxType(OtherTaxType $type): int
@@ -211,7 +172,7 @@ final class InvoiceMapper
         return $detail;
     }
 
-    /** Parse persisted calendar dates strictly: DateTimeImmutable otherwise normalizes invalid days. */
+    /** Parse a YYYY-MM-DD calendar date strictly: DateTimeImmutable otherwise normalizes invalid days. */
     public static function parseDate(string $value): DateTimeImmutable
     {
         $date = DateTimeImmutable::createFromFormat(

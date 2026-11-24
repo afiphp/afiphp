@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Tests;
 
-use Afiphp\Exceptions\SoapException;
+use Afiphp\Exceptions\ConfigurationError;
 use Afiphp\Internal\WebServices\NativeSoapTransport;
 use Afiphp\NetworkOptions;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -183,7 +183,7 @@ final class NativeSoapTransportTest extends TestCase
             SOAP_1_1,
         );
         $transport = new NativeSoapTransport($wsdl, 'https://unused.test/', true, new NetworkOptions(), $client);
-        $this->expectException(SoapException::class);
+        $this->expectException(ConfigurationError::class);
         $transport->call('loginCms', ['in0' => 'signed']);
     }
 

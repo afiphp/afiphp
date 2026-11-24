@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Afiphp\Internal\WebServices;
 
 use Afiphp\Configuration;
+use Afiphp\Exceptions\ArcaUnavailable;
 use Afiphp\Exceptions\SoapException;
 use Afiphp\Internal\WebServices\Contracts\SoapTransport;
 use Afiphp\Internal\WebServices\Contracts\TicketProvider;
@@ -50,7 +51,8 @@ abstract class Padron extends AbstractWsAfip
                 'sign' => $ticket->sign,
                 'cuitRepresentada' => (int) $this->configuration->cuit,
             ] + $params);
-        } catch (SoapException $exception) {
+        } catch (ArcaUnavailable|SoapException $exception) {
+            // The registry answers "not found" with a server fault.
             if (self::isNotFound($exception->getMessage())) {
                 return null;
             }

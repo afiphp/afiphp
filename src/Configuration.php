@@ -8,6 +8,8 @@ use Afiphp\Billing\Receiver;
 use Afiphp\Billing\VatCondition;
 use Afiphp\Storage\Storage;
 use InvalidArgumentException;
+use Psr\Log\LoggerInterface;
+use Psr\Log\NullLogger;
 
 final readonly class Configuration
 {
@@ -18,6 +20,8 @@ final readonly class Configuration
         public Storage $storage,
         public Environment $environment = Environment::HOMOLOGATION,
         public NetworkOptions $network = new NetworkOptions(),
+        /** Receives ARCA calls (debug), logins and issuances (info) and problems (warning, error). Never secrets. */
+        public LoggerInterface $logger = new NullLogger(),
     ) {
         if (PHP_INT_SIZE < 8) {
             throw new InvalidArgumentException('Exact fiscal arithmetic requires 64-bit PHP.');

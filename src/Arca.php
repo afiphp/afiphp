@@ -7,27 +7,31 @@ namespace Afiphp;
 use Afiphp\Billing\Invoice;
 use Afiphp\Billing\InvoiceClass;
 use Afiphp\Billing\InvoiceKind;
+use Afiphp\Billing\InvoiceReference;
 use Afiphp\Billing\IssueResult;
-use Afiphp\Billing\Item;
-use Afiphp\Billing\OtherTax;
 use Afiphp\Billing\Preview;
 use Afiphp\Billing\Taxpayer;
+use Afiphp\Exceptions\ArcaUnavailable;
+use Afiphp\Exceptions\ConfigurationError;
 use Afiphp\Internal\Billing\FiscalGateway;
+use Afiphp\Internal\Billing\FoundVoucher;
 use Afiphp\Internal\Billing\InvoiceCalculator;
 use Afiphp\Internal\Billing\InvoiceMapper;
-use Afiphp\Internal\Billing\IssuanceCoordinator;
+use Afiphp\Internal\Billing\Issuance;
+use Afiphp\Internal\Billing\VoucherReader;
+use Afiphp\Internal\WebServices\Failures;
 use Afiphp\Internal\WebServices\PadronA13;
 use Afiphp\Internal\WebServices\PadronA5;
 use Afiphp\Internal\WebServices\WsFeV1;
 use DateTimeImmutable;
-use DateTimeZone;
 use InvalidArgumentException;
+use Throwable;
 
 /** Public entry point. No ARCA codes, SOAP requests, or authentication calls required. */
 final class Arca
 {
     private FiscalGateway $gateway;
-    private IssuanceCoordinator $issuance;
+    private Issuance $issuance;
     private PadronA5 $padron;
     private PadronA13 $documents;
 
@@ -43,7 +47,7 @@ final class Arca
         ?PadronA13 $documents = null,
     ) {
         $this->gateway = $gateway ?? new WsFeV1($configuration);
-        $this->issuance = new IssuanceCoordinator($configuration, $this->gateway);
+        $this->issuance = new Issuance($configuration, $this->gateway);
         $this->padron = $padron ?? new PadronA5($configuration);
         $this->documents = $documents ?? new PadronA13($configuration);
     }
@@ -68,25 +72,137 @@ final class Arca
     }
 
     /**
-     * WSFE's health report (FEDummy), without logging in. Throws a ServiceUnavailable exception
-     * when ARCA cannot be reached at all.
+     * WSFE's own health report (FEDummy), without the certificate: whether ARCA is working for everyone,
+     * not whether this issuer can invoice. Throws ArcaUnavailable when ARCA cannot be reached at all.
      */
     public function status(): ServiceStatus
     {
         return $this->gateway->status();
     }
 
+    /** Days before the certificate expires when check() starts logging a warning. */
+    public const CERTIFICATE_WARNING_DAYS = 30;
+
     /**
-     * The last number ARCA authorized for a series. Read-only: it reserves nothing, and issue()
-     * reads it again. Needs the login, so it also proves the certificate and WSFE authorization.
+     * Whether this issuer can invoice now: the certificate is in force, ARCA is working, the
+     * certificate logs in and WSFE is enabled for the CUIT. With $salesPoint, also that ARCA lists
+     * it for web services and it is active. Returns nothing when it can; otherwise throws
+     * ArcaUnavailable (wait) or ConfigurationError (call an administrator). Logs a warning when the
+     * certificate expires within CERTIFICATE_WARNING_DAYS. Up to two calls: cache the answer for a minute.
      */
-    public function lastNumber(InvoiceClass $class, InvoiceKind $kind, int $salesPoint): int
+    public function check(?int $salesPoint = null): void
     {
-        if ($salesPoint < 1 || $salesPoint > 99999) {
-            throw new InvalidArgumentException('The sales point must be between 1 and 99999.');
+        $credentials = $this->configuration->credentials;
+        $now = new DateTimeImmutable();
+        if (!$credentials->isValidAt($now)) {
+            throw new ConfigurationError(
+                $now < $credentials->validFrom
+                    ? 'The certificate is not valid until ' . $credentials->validFrom->format(DATE_ATOM) . '.'
+                    : 'The certificate expired on ' . $credentials->expiresAt->format(DATE_ATOM) . '.',
+            );
+        }
+        $days = intdiv($credentials->expiresAt->getTimestamp() - $now->getTimestamp(), 86400);
+        if ($days < self::CERTIFICATE_WARNING_DAYS) {
+            $this->configuration->logger->warning('The ARCA certificate expires in {days} days, on {date}', [
+                'days' => $days,
+                'date' => $credentials->expiresAt->format(DATE_ATOM),
+            ]);
+        }
+        if (!$this->status()->isAvailable()) {
+            throw new ArcaUnavailable('ARCA reports a problem in its own servers.', true);
+        }
+        $points = $this->gateway->salesPoints();
+        if ($salesPoint === null) {
+            return;
+        }
+        foreach ($points as $point) {
+            if ($point->number !== $salesPoint) {
+                continue;
+            }
+            if (!$point->isActive()) {
+                throw new ConfigurationError(
+                    "Sales point {$salesPoint} is " . ($point->blocked ? 'blocked' : 'deregistered') . ' in ARCA.',
+                );
+            }
+
+            return;
+        }
+        // ARCA's homologation usually lists no sales points at all, and still accepts any.
+        if ($points === [] && $this->configuration->environment === Environment::HOMOLOGATION) {
+            return;
         }
 
+        throw new ConfigurationError("ARCA does not list sales point {$salesPoint} for web services.");
+    }
+
+    /**
+     * The sales points ARCA lists for web services, including blocked and deregistered ones.
+     * Empty when there are none; ARCA's homologation usually lists none.
+     * @return list<SalesPoint>
+     */
+    public function salesPoints(): array
+    {
+        return $this->gateway->salesPoints();
+    }
+
+    /** The last number ARCA authorized in a series; 0 when there is none yet. */
+    public function lastNumber(int $salesPoint, InvoiceClass $class, InvoiceKind $kind = InvoiceKind::INVOICE): int
+    {
+        self::assertCoordinates($salesPoint, 1);
+
         return $this->gateway->lastNumber(InvoiceMapper::type($class, $kind), $salesPoint);
+    }
+
+    /**
+     * An authorized voucher as ARCA has it (FECompConsultar), or null when the number is empty.
+     * Works for vouchers issued by any system; throws UnexpectedValueException for one afiphp does not
+     * model, such as one in euros or authorized with CAEA.
+     */
+    public function voucher(
+        InvoiceClass $class,
+        int $salesPoint,
+        int $number,
+        InvoiceKind $kind = InvoiceKind::INVOICE,
+    ): ?IssueResult {
+        $found = $this->find($class, $salesPoint, $number, $kind);
+
+        return $found === null ? null : VoucherReader::result($found, $this->configuration->cuit);
+    }
+
+    /**
+     * A credit note for the whole voucher: it looks the original up in ARCA and mirrors its receiver,
+     * currency, exchange rate, amounts by VAT rate and other taxes. Issue it with issue(), like any
+     * invoice; keep it, or build it again, for a retry with previousNumber. Throws
+     * InvalidArgumentException when ARCA does not have the original with that date, or when its amounts
+     * cannot be reproduced exactly: then issue the note with explicit items.
+     */
+    public function fullCreditNote(
+        InvoiceReference $original,
+        DateTimeImmutable $date,
+        ?int $salesPoint = null,
+    ): Invoice {
+        $found = $this->find($original->class, $original->salesPoint, $original->number, $original->kind);
+        if ($found === null) {
+            throw new InvalidArgumentException(
+                "ARCA has no voucher {$original->salesPoint}-{$original->number} of that class and kind.",
+            );
+        }
+        if ($found->date->format('Y-m-d') !== $original->date->format('Y-m-d')) {
+            throw new InvalidArgumentException(
+                "ARCA has voucher {$original->salesPoint}-{$original->number} dated "
+                . $found->date->format('Y-m-d')
+                . ', not '
+                . $original->date->format('Y-m-d')
+                . '.',
+            );
+        }
+
+        return VoucherReader::fullCreditNote(
+            $found,
+            $date,
+            $salesPoint ?? $original->salesPoint,
+            $this->configuration->vatCondition,
+        );
     }
 
     /**
@@ -105,76 +221,37 @@ final class Arca
     }
 
     /**
-     * Pass a stable operation identifier (the sale, order or refund id) so a repeated call returns
-     * the recorded result instead of issuing again. Without one, a random identifier is assigned
-     * and returned in $result->operation: recovery still works, but a repeat issues a new voucher.
+     * Sends the invoice once with the next number. If the answer is lost, looks that number up once.
+     * Throws UnconfirmedIssue when it still cannot tell: keep its number with the invoice and pass it
+     * as $previousNumber on the next attempt, which looks it up first and never issues twice.
+     * The invoice must not change while an attempt is unconfirmed, except for its date.
      */
-    public function issue(Invoice $invoice, ?string $operation = null): IssueResult
+    public function issue(Invoice $invoice, ?int $previousNumber = null): IssueResult
     {
-        return $this->issuance->issue($invoice, $operation);
+        return $this->issuance->issue($invoice, $previousNumber);
     }
 
-    /**
-     * The note crediting an authorized operation in full: same items and other taxes. Receiver,
-     * currency, service, sales point and class come from the stored original. Reads the local
-     * journal only: nothing is sent or reserved, so pass the result to preview() or issue().
-     */
-    public function fullCreditNote(string $originalOperation, ?DateTimeImmutable $date = null): Invoice
+    private function find(InvoiceClass $class, int $salesPoint, int $number, InvoiceKind $kind): ?FoundVoucher
     {
-        return $this->note($originalOperation, InvoiceKind::CREDIT_NOTE, null, [], $date);
+        self::assertCoordinates($salesPoint, $number);
+        try {
+            $found = $this->gateway->lookup(InvoiceMapper::type($class, $kind), $salesPoint, $number);
+        } catch (Throwable $exception) {
+            if (Failures::isNotFound($exception)) {
+                return null;
+            }
+            throw $exception;
+        }
+
+        return VoucherReader::read($found, $class, $kind, $salesPoint, $number);
     }
 
-    /**
-     * A partial credit of an authorized operation; it must not exceed the original total.
-     * Other taxes are never prorated: pass the ones that apply to this note.
-     * @param list<Item> $items
-     * @param list<OtherTax> $otherTaxes
-     */
-    public function creditNote(
-        string $originalOperation,
-        array $items,
-        array $otherTaxes = [],
-        ?DateTimeImmutable $date = null,
-    ): Invoice {
-        return $this->note($originalOperation, InvoiceKind::CREDIT_NOTE, $items, $otherTaxes, $date);
-    }
-
-    /**
-     * A debit note on an authorized operation; not capped by the original total.
-     * @param list<Item> $items
-     * @param list<OtherTax> $otherTaxes
-     */
-    public function debitNote(
-        string $originalOperation,
-        array $items,
-        array $otherTaxes = [],
-        ?DateTimeImmutable $date = null,
-    ): Invoice {
-        return $this->note($originalOperation, InvoiceKind::DEBIT_NOTE, $items, $otherTaxes, $date);
-    }
-
-    /** Read-only at ARCA: reconcile the saved request against its exact reserved number. */
-    public function recover(string $operation): IssueResult
+    private static function assertCoordinates(int $salesPoint, int $number): void
     {
-        return $this->issuance->recover($operation);
-    }
-
-    /** Explicit retry of the SAME request/number, only after a verified absence and sequence check. */
-    public function retry(string $operation): IssueResult
-    {
-        return $this->issuance->retry($operation);
-    }
-
-    /** The date is part of the note: today in Buenos Aires unless given. */
-    private function note(
-        string $originalOperation,
-        InvoiceKind $kind,
-        ?array $items,
-        array $otherTaxes,
-        ?DateTimeImmutable $date,
-    ): Invoice {
-        $date ??= new DateTimeImmutable('today', new DateTimeZone('America/Argentina/Buenos_Aires'));
-
-        return $this->issuance->noteFor($originalOperation, $kind, $items, $otherTaxes, $date);
+        if ($salesPoint < 1 || $salesPoint > 99999 || $number < 1 || $number > 99999999) {
+            throw new InvalidArgumentException(
+                'Sales point must be from 1 through 99999 and number from 1 through 99999999.',
+            );
+        }
     }
 }

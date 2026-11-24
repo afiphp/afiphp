@@ -1,6 +1,6 @@
 # Facturación
 
-[Inicio](../README.md) · [Configuración](configuracion.md) · [Conciliación](conciliacion.md)
+[Inicio](../README.md) · [Configuración](configuracion.md) · [Errores y reintentos](conciliacion.md)
 
 Los ejemplos suponen un cliente `$arca` y esta fecha:
 
@@ -8,9 +8,8 @@ Los ejemplos suponen un cliente `$arca` y esta fecha:
 $today = new DateTimeImmutable('today', new DateTimeZone('America/Argentina/Buenos_Aires'));
 ```
 
-Para emitir cualquiera de estos comprobantes, guardalo con su ID, llamá
-`$arca->issue($invoice, 'venta:123')` y tratá el
-[estado del resultado](conciliacion.md#qué-hacer-con-cada-estado).
+Para emitir cualquiera de estos comprobantes, llamá `$arca->issue($invoice)` y
+tratá sus [excepciones](conciliacion.md#qué-puede-pasar-al-emitir).
 
 ## Importes
 
@@ -160,28 +159,6 @@ varias CUIT, no elijas la primera. Las respuestas no se cachean.
 
 ## Notas de crédito y débito
 
-### A partir de una operación propia
-
-```php
-$full = $arca->fullCreditNote('venta:123', date: $today);
-$partial = $arca->creditNote('venta:123', [Item::netAmount(5000, VatRate::STANDARD_21)], date: $today);
-$debit = $arca->debitNote('venta:123', [Item::netAmount(1000, VatRate::STANDARD_21)], date: $today);
-
-$result = $arca->issue($partial, 'venta:123:nc:1');
-```
-
-- Leen el registro local; no emiten. El original debe estar `AUTHORIZED`.
-- Heredan receptor, moneda, cotización, servicio, punto de venta y **clase**
-  (para un original C, usá `Item::amount()` sin alícuota).
-- La nota total copia ítems y tributos. En las parciales, pasá los tributos con
-  `otherTaxes:`; no se prorratean.
-- Una nota de crédito no supera el total del original, pero **no se controla
-  el saldo** acumulado de notas: eso queda en tu aplicación.
-- Guardá la nota antes de emitir: reconstruirla otro día cambia la fecha y
-  produce un conflicto de idempotencia.
-
-### Manualmente
-
 Una nota ajusta un comprobante (`original:`) o un período (`period:`), nunca
 ambos:
 
@@ -197,17 +174,66 @@ $note = new Invoice(
     original: $authorized->invoiceReference(),
     // o: period: new AssociatedPeriod($desde, $hasta),
 );
+
+$result = $arca->issue($note);
 ```
 
-Con `original:`, la nota toma su clase. Con `period:`, la clase se deriva de las
-condiciones actuales. Una nota de crédito no puede ajustar otra nota de crédito.
+- Con `original:`, la nota toma su clase (para un original C, usá
+  `Item::amount()` sin alícuota). Con `period:`, la clase se deriva de las
+  condiciones actuales.
+- Usá el mismo receptor, moneda y cotización que el original.
+- Una nota de crédito no puede ajustar otra nota de crédito.
+- **No se controla el saldo** de notas contra el original: eso queda en tu
+  aplicación.
+- Si no tenés el `IssueResult` del original, armá la referencia con
+  `new InvoiceReference($clase, $puntoDeVenta, $numero, $fecha)`.
+
+### Nota de crédito total
+
+Para anular todo un comprobante, `fullCreditNote()` lo consulta en ARCA y arma
+la nota que lo espeja: mismo receptor, moneda, cotización, importes por
+alícuota, exento, no gravado y otros tributos. Devuelve un `Invoice` común, que
+se emite con `issue()`:
+
+```php
+$note = $arca->fullCreditNote($authorized->invoiceReference(), $today);
+$result = $arca->issue($note);
+```
+
+- Sirve para comprobantes de cualquier sistema, no solo de afiphp. La fecha de
+  la referencia tiene que coincidir con la que tiene ARCA.
+- Un tercer parámetro, `salesPoint:`, emite la nota en otro punto de venta.
+- En servicios, el vencimiento de pago pasa a la fecha de la nota si el
+  original ya venció.
+- Lanza `InvalidArgumentException` si no puede reproducir los importes
+  exactamente: un receptor sin identificar (documento 99), otra moneda, datos
+  opcionales de ARCA o un IVA que no es la base por la alícuota redondeada una
+  vez. En ese caso, armá la nota con ítems explícitos.
+- Para un reintento con `previousNumber`, guardá la nota o volvé a armarla:
+  sale igual mientras el original no cambie.
+
+## Consultar comprobantes
+
+```php
+use Afiphp\Billing\InvoiceClass;
+
+$last = $arca->lastNumber(2, InvoiceClass::B); // 0 si la serie está vacía.
+$voucher = $arca->voucher(InvoiceClass::B, 2, $last); // null si no existe.
+```
+
+`voucher()` devuelve un `IssueResult` con lo que ARCA tiene: fecha, totales,
+CAE, receptor, moneda y QR. Sirve para conciliar, reimprimir o migrar desde
+otro sistema. `receiver` es `null` cuando ARCA lo tiene sin identificar
+(documento 99). Lanza `UnexpectedValueException` para comprobantes que afiphp
+no modela, como uno en euros o autorizado con CAEA. Las notas se consultan
+con el cuarto parámetro, `kind:`.
 
 ## Fechas y validaciones
 
 - Se usa el día calendario del `DateTimeImmutable`, sin convertir zonas.
 - Al emitir, la fecha debe estar en la ventana de ARCA: productos ±5 días (sin
-  pasar del fin de mes), servicios ±10 días. Tampoco puede ser anterior a otra
-  autorización local de la misma serie.
+  pasar del fin de mes), servicios ±10 días. Tampoco puede ser anterior a la
+  última factura autorizada de la serie: ARCA la rechaza.
 - `preview()` solo calcula clase e importes: **no verifica fechas, numeración
   ni habilitaciones**.
 - CUIT y CUIL deben tener dígito verificador válido; el DNI, hasta 11 dígitos.

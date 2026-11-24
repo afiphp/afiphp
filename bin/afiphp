@@ -1,0 +1,20 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+// Composer sets this for vendor/bin proxies; otherwise, the repository or a vendor/afiphp/afiphp install.
+$autoload = $GLOBALS['_composer_autoload_path'] ?? null;
+foreach ([$autoload, __DIR__ . '/../vendor/autoload.php', __DIR__ . '/../../../autoload.php'] as $candidate) {
+    if (is_string($candidate) && is_file($candidate)) {
+        require $candidate;
+        break;
+    }
+}
+if (!class_exists(Afiphp\Internal\Cli\Cli::class)) {
+    fwrite(STDERR, "No se encontró el autoload de Composer.\n");
+    exit(1);
+}
+
+$environment = array_filter(getenv(), static fn (string $name): bool => str_starts_with($name, 'ARCA_'), ARRAY_FILTER_USE_KEY);
+exit((new Afiphp\Internal\Cli\Cli(STDOUT, STDERR, $environment, (string) getcwd()))->run(array_slice($argv, 1)));

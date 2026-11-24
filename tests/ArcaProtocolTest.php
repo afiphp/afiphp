@@ -13,14 +13,13 @@ use Afiphp\Billing\InvoiceReference;
 use Afiphp\Billing\Item;
 use Afiphp\Billing\OtherTax;
 use Afiphp\Billing\OtherTaxType;
-use Afiphp\Billing\Outcome;
 use Afiphp\Billing\Receiver;
 use Afiphp\Billing\ServicePeriod;
 use Afiphp\Billing\VatCondition;
 use Afiphp\Billing\VatRate;
 use Afiphp\Configuration;
-use Afiphp\Exceptions\ServiceUnavailable;
-use Afiphp\Exceptions\SoapException;
+use Afiphp\Exceptions\ArcaUnavailable;
+use Afiphp\Exceptions\UnconfirmedIssue;
 use Afiphp\Internal\WebServices\WsFeV1;
 use DateTimeImmutable;
 use DateTimeZone;
@@ -65,8 +64,7 @@ final class ArcaProtocolTest extends TestCase
             return (object) ['FECAESolicitarResult' => FakeFiscalGateway::approved($params)];
         });
         $client = $this->client($transport, $condition);
-        $result = $client->issue($invoice, 'sale');
-        self::assertSame(Outcome::AUTHORIZED, $result->outcome);
+        $result = $client->issue($invoice);
         $detail = $transport->calls[1][1]['FeCAEReq']['FeDetReq']['FECAEDetRequest'][0];
         self::assertSame(
             $scenario === 'C' ? '150.00' : ($scenario === 'note' ? '189.30' : '181.50'),
@@ -83,13 +81,6 @@ final class ArcaProtocolTest extends TestCase
         if ($scenario === 'C') {
             self::assertArrayNotHasKey('Iva', $detail);
         }
-        $json = file_get_contents(glob($this->directory . '/storage/issuance/*.json')[0]);
-        self::assertStringNotContainsString('"Token"', $json);
-        self::assertStringNotContainsString('"Sign"', $json);
-        $saved = json_decode($json, true, 512, JSON_THROW_ON_ERROR);
-        $record = $saved['records'][hash('sha256', 'sale')];
-        self::assertSame('authorized', $record['status']);
-        self::assertCount(2, $record['history']);
     }
 
     public static function scenarios(): array
@@ -97,7 +88,7 @@ final class ArcaProtocolTest extends TestCase
         return [['A', 1], ['B', 6], ['C', 11], ['note', 3]];
     }
 
-    public function testUnreachableArcaBeforeReservingLeavesNothingPending(): void
+    public function testUnreachableArcaBeforeSendingIsSafeToRepeat(): void
     {
         $down = true;
         $transport = new FakeTransport(static function (string $method, array $params) use (&$down): object {
@@ -117,30 +108,17 @@ final class ArcaProtocolTest extends TestCase
             new DateTimeImmutable('today', new DateTimeZone('America/Argentina/Buenos_Aires')),
         );
         try {
-            $client->issue($invoice, 'sale');
+            $client->issue($invoice);
             self::fail('Expected ARCA to be unavailable.');
-        } catch (ServiceUnavailable) {
+        } catch (ArcaUnavailable) {
         }
         self::assertSame(['FECompUltimoAutorizado'], array_column($transport->calls, 0));
         $down = false;
-        $result = $client->issue($invoice, 'sale');
-        self::assertSame(Outcome::AUTHORIZED, $result->outcome);
+        $result = $client->issue($invoice);
         self::assertSame(50, $result->number);
     }
 
-    public function testLastNumberReadsTheSeriesOfTheClassAndKind(): void
-    {
-        $transport = new FakeTransport(static fn (string $method, array $params): object => (object) [
-            'CbteNro' => 7,
-            'PtoVta' => $params['PtoVta'],
-            'CbteTipo' => $params['CbteTipo'],
-        ]);
-        self::assertSame(7, $this->client($transport)->lastNumber(InvoiceClass::C, InvoiceKind::CREDIT_NOTE, 3));
-        self::assertSame(13, $transport->calls[0][1]['CbteTipo']);
-        self::assertSame(3, $transport->calls[0][1]['PtoVta']);
-    }
-
-    public function testRealError602IsConsultationEvidenceNotAnImplicitRejectionOrAutomaticRetry(): void
+    public function testRealError602LeavesTheAttemptUnconfirmedAndTheNextOneResendsItsNumber(): void
     {
         $attempt = 0;
         $transport = new FakeTransport(static function (string $method, array $params) use (&$attempt): object {
@@ -154,7 +132,7 @@ final class ArcaProtocolTest extends TestCase
                 ]]]]];
             }
             if (++$attempt === 1) {
-                throw new SoapException(new \SoapFault('HTTP', 'Timeout'));
+                throw new ArcaUnavailable('Timeout', true);
             }
             return (object) ['FECAESolicitarResult' => FakeFiscalGateway::approved($params)];
         });
@@ -165,10 +143,14 @@ final class ArcaProtocolTest extends TestCase
             [Item::netAmount(15000, VatRate::STANDARD_21)],
             new DateTimeImmutable('today', new DateTimeZone('America/Argentina/Buenos_Aires')),
         );
-        self::assertSame(Outcome::INDETERMINATE, $client->issue($invoice, 'sale')->outcome);
-        self::assertSame(Outcome::INDETERMINATE, $client->recover('sale')->outcome);
+        try {
+            $client->issue($invoice);
+            self::fail('Expected an unconfirmed issue.');
+        } catch (UnconfirmedIssue $exception) {
+            self::assertSame(50, $exception->number);
+        }
         self::assertSame(1, $attempt);
-        self::assertSame(Outcome::AUTHORIZED, $client->retry('sale')->outcome);
+        self::assertSame(50, $client->issue($invoice, $exception->number)->number);
         self::assertSame(2, $attempt);
         self::assertSame(
             [
@@ -176,12 +158,11 @@ final class ArcaProtocolTest extends TestCase
                 'FECAESolicitar',
                 'FECompConsultar',
                 'FECompConsultar',
-                'FECompUltimoAutorizado',
                 'FECAESolicitar',
             ],
             array_column($transport->calls, 0),
         );
-        self::assertSame($transport->calls[1][1]['FeCAEReq'], $transport->calls[5][1]['FeCAEReq']);
+        self::assertSame($transport->calls[1][1]['FeCAEReq'], $transport->calls[4][1]['FeCAEReq']);
     }
 
     private function client(

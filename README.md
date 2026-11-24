@@ -29,7 +29,7 @@ consumidor final, desde un responsable inscripto. Para monotributo, usá la
 require __DIR__ . '/vendor/autoload.php';
 
 use Afiphp\{Arca, Configuration, Credentials, Environment};
-use Afiphp\Billing\{Invoice, Item, Outcome, Receiver, VatCondition, VatRate};
+use Afiphp\Billing\{Invoice, Item, Receiver, VatCondition, VatRate};
 use Afiphp\Storage\FileStorage;
 
 $arca = new Arca(new Configuration(
@@ -50,35 +50,43 @@ $invoice = new Invoice(
     date: new DateTimeImmutable('today', new DateTimeZone('America/Argentina/Buenos_Aires')),
 );
 
-$result = $arca->issue($invoice, 'venta:123');
+$result = $arca->issue($invoice);
 
-if ($result->outcome === Outcome::AUTHORIZED) {
-    echo "Número: {$result->number}\n";
-    echo "CAE: {$result->authorization->cae}\n";
-    echo "Total: {$result->totals->total} centavos\n"; // 18150 = $181,50.
-}
+echo "Número: {$result->number}\n";
+echo "CAE: {$result->authorization->cae}\n";
+echo "Total: {$result->totals->total} centavos\n"; // 18150 = $181,50.
 ```
 
-Tres reglas:
+`issue()` devuelve solo facturas autorizadas. Lo demás es una excepción:
 
-1. **Guardá la factura y su ID (`venta:123`) antes de emitir.** Repetir
-   `issue()` con el mismo ID y los mismos datos devuelve el resultado guardado,
-   sin emitir de nuevo. Si ARCA la rechazó, corregila y emitila con el mismo ID.
-2. **Un timeout o una excepción no autorizan a emitir con otro ID.** Tratá cada
-   [estado del resultado](docs/conciliacion.md#qué-hacer-con-cada-estado).
-3. **El almacenamiento no es caché.** No lo borres ni lo restaures para
-   desbloquear una serie.
+| Excepción | Qué hacer |
+|---|---|
+| `InvoiceRejected` | Corregir según `$e->observations` y emitir de nuevo. |
+| `UnconfirmedIssue` | Guardar `$e->number` con la factura y pasarlo como `previousNumber` en el próximo intento. |
+| `ArcaUnavailable` | Esperar y repetir. |
+| `ConfigurationError` | Revisar certificado, habilitaciones, reloj o TLS. |
+| `LockTimeout` | Otra emisión ocupaba el punto de venta; no se envió nada. Repetir. |
+
+**Si se pierde la respuesta de ARCA, la factura puede existir.** Por eso, ante
+`UnconfirmedIssue`, no emitas de nuevo sin el número: ver
+[errores y reintentos](docs/conciliacion.md).
 
 `$arca->preview($invoice)` calcula importes sin contactar ARCA.
+
+Para preparar el certificado y probar la instalación, el paquete trae un
+comando: `vendor/bin/afiphp init` y `vendor/bin/afiphp check` (ver
+[configuración](docs/configuracion.md#con-el-comando-afiphp)).
 
 ## Documentación
 
 | Quiero… | Guía |
 |---|---|
 | Preparar certificados, servicios y ambientes | [Configuración](docs/configuracion.md) |
-| Emitir C, IVA incluido, servicios, dólares, tributos o notas | [Facturación](docs/facturacion.md) |
-| Resolver pendientes, bloqueos y reintentos | [Conciliación](docs/conciliacion.md) |
-| Desplegar, respaldar o implementar otro backend | [Almacenamiento](docs/almacenamiento.md) |
+| Emitir C, IVA incluido, servicios, dólares, tributos o notas; consultar comprobantes | [Facturación](docs/facturacion.md) |
+| Armar el comprobante impreso | [Comprobante impreso](docs/impresion.md) |
+| Revisar todo antes de emitir de verdad | [Pasar a producción](docs/produccion.md) |
+| Manejar errores, respuestas perdidas y reintentos | [Errores y reintentos](docs/conciliacion.md) |
+| Guardar las sesiones de ARCA o implementar otro backend | [Almacenamiento](docs/almacenamiento.md) |
 | Consultar métodos, parámetros y errores | [Referencia](docs/referencia.md) |
 | Desarrollar y ejecutar las pruebas | [Contribuir](CONTRIBUTING.md) |
 
@@ -88,6 +96,7 @@ Tres reglas:
   ARCA verifica las habilitaciones. Las pruebas no certifican cumplimiento
   fiscal: hace falta revisión contable y homologación.
 - No incluye exportación, FCE MiPyME, CAEA, comprobantes M ni lotes. No genera
-  PDF: devuelve el CAE y la URL del QR.
+  PDF: arma el [modelo del comprobante impreso](docs/impresion.md) para tu
+  plantilla.
 - El namespace `Internal` no es API pública.
 - Si ya tenés un sistema emitiendo, leé [cómo migrar](docs/configuracion.md#migración).

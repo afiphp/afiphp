@@ -15,22 +15,20 @@ use Afiphp\Billing\IssueResult;
 use Afiphp\Billing\Item;
 use Afiphp\Billing\OtherTax;
 use Afiphp\Billing\OtherTaxType;
-use Afiphp\Billing\Outcome;
 use Afiphp\Billing\Receiver;
 use Afiphp\Billing\VatCondition;
 use Afiphp\Billing\VatRate;
 use Afiphp\Configuration;
 use Afiphp\Credentials;
 use Afiphp\Environment;
-use Afiphp\Exceptions\SoapException;
+use Afiphp\Exceptions\ConfigurationError;
+use Afiphp\Exceptions\InvoiceRejected;
 use Afiphp\Exceptions\WsException;
-use Afiphp\Internal\Billing\FiscalEvidence;
 use Afiphp\Internal\Billing\InvoiceMapper;
 use Afiphp\Internal\WebServices\WsFeV1;
 use Afiphp\Internal\WebServices\WsResponse;
 use Afiphp\NetworkOptions;
 use Afiphp\Storage\FileStorage;
-use Afiphp\Storage\IssuanceJournal;
 use DateTimeImmutable;
 use DateTimeZone;
 use PHPUnit\Framework\Attributes\Group;
@@ -46,7 +44,7 @@ use PHPUnit\Framework\TestCase;
  * and ws_sr_padron_a13.
  *
  * The certificate must be a homologation certificate with the "wsfe" service delegated to ARCA_CUIT.
- * Tickets and journals live in ARCA_STORAGE (default: a private temp directory) so repeated runs reuse the TA.
+ * Tickets live in ARCA_STORAGE (default: a private temp directory) so repeated runs reuse the TA.
  */
 #[Group('arca')]
 final class ArcaHomologationTest extends TestCase
@@ -108,7 +106,7 @@ final class ArcaHomologationTest extends TestCase
         $types = $ids($ws->execute('FEParamGetTiposCbte'), 'CbteTipo');
         foreach (InvoiceClass::cases() as $class) {
             foreach (InvoiceKind::cases() as $kind) {
-                self::assertContains(InvoiceMapper::type($class, $kind), $types, "{$class->value} {$kind->value}");
+                self::assertContains(InvoiceMapper::type($class, $kind), $types, "{$class->value} {$kind->name}");
             }
         }
         $rates = $ids($ws->execute('FEParamGetTiposIva'), 'IvaTipo');
@@ -182,8 +180,8 @@ final class ArcaHomologationTest extends TestCase
     {
         try {
             return $query(new Arca(self::$configuration));
-        } catch (SoapException $exception) {
-            if ($exception->getFaultCode() !== 'ns1:coe.notAuthorized') {
+        } catch (ConfigurationError $exception) {
+            if (!str_contains($exception->getMessage(), 'coe.notAuthorized')) {
                 throw $exception;
             }
             self::markTestSkipped("The certificate is not authorized for {$service}.");
@@ -197,48 +195,47 @@ final class ArcaHomologationTest extends TestCase
         self::assertGreaterThan(0, (float) $rate);
     }
 
-    /** Full lifecycle: authorize, reconcile against FECompConsultar, replay, then a credit note. */
-    public function testInvoiceIsAuthorizedReconciledAndCanBeCreditedInFull(): void
+    /**
+     * Full lifecycle: authorize, find it again as an earlier attempt, then a credit note.
+     * The lookup is the most valuable check: the real FECompConsultar answer must match what we sent
+     * field by field. If ARCA omits or reformats a field, a lost answer could never be confirmed.
+     */
+    public function testInvoiceIsAuthorizedFoundAgainAndCanBeCreditedInFull(): void
     {
         $arca = new Arca(self::$configuration);
         $invoice = $this->invoice(100000);
-        $operation = 'homologation:' . bin2hex(random_bytes(8));
 
-        $result = $arca->issue($invoice, $operation);
-        self::assertSame(
-            Outcome::AUTHORIZED,
-            $result->outcome,
-            $result->reason . ' ' . implode(' | ', $result->observations),
-        );
+        $result = $arca->issue($invoice);
         self::assertEquals($arca->preview($invoice), $result->totals);
         self::assertMatchesRegularExpression('/^[0-9]{14}$/', $result->authorization->cae);
+        self::assertFoundAgain($arca, $invoice, $result);
 
-        // The most valuable check: the real FECompConsultar answer must reconcile field by field
-        // with what we sent. If ARCA omits or reformats a field, recovery would stay INDETERMINATE forever.
-        $record = $this->record($operation);
-        $found = $this->wsfe()->lookup(
-            $record['request']['FeCAEReq']['FeCabReq']['CbteTipo'],
-            $result->salesPoint,
-            $result->number,
-        );
-        self::assertSame(
-            [
-                'status' => 'authorized',
-                'cae' => $result->authorization->cae,
-                'expires' => $result->authorization->expiresOn->format('Y-m-d'),
-                'reconciled' => true,
-            ],
-            FiscalEvidence::lookup($found, $record['request']),
-        );
+        // The public lookup reads back the same voucher, and the full credit note mirrors it exactly.
+        $found = $arca->voucher($result->class, $result->salesPoint, $result->number);
+        self::assertNotNull($found);
+        self::assertEquals($result->totals, $found->totals);
+        self::assertEquals($result->receiver, $found->receiver);
+        self::assertSame($result->qr, $found->qr);
+        self::assertSame($result->number, $arca->lastNumber($result->salesPoint, $result->class));
 
-        self::assertEquals($result, $arca->issue($invoice, $operation), 'A replay must return the stored result.');
-
-        $credit = $arca->fullCreditNote($operation);
-        self::assertEquals($result->invoiceReference(), $credit->original);
-        $note = $arca->issue($credit, $operation . ':nc');
-        self::assertAuthorized($note);
+        $full = $arca->fullCreditNote($result->invoiceReference(), $invoice->date);
+        self::assertEquals($arca->preview($invoice), $arca->preview($full));
+        $note = $arca->issue($full);
         self::assertSame($result->class, $note->class);
         self::assertEquals($result->totals->total, $note->totals->total);
+    }
+
+    /** check() logs in and accepts the configured sales point, which salesPoints() lists unless homologation lists none. */
+    public function testCheckAcceptsTheConfiguredSalesPoint(): void
+    {
+        $arca = new Arca(self::$configuration);
+        $arca->check(self::$salesPoint);
+        // check() returning without an exception is the assertion.
+        $this->addToAssertionCount(1);
+        $points = $arca->salesPoints();
+        if ($points !== []) {
+            self::assertContains(self::$salesPoint, array_map(static fn ($point): int => $point->number, $points));
+        }
     }
 
     /** Invoice to a registered business (class A for a registered issuer), then a partial credit and a debit. */
@@ -246,26 +243,23 @@ final class ArcaHomologationTest extends TestCase
     {
         $arca = new Arca(self::$configuration);
         $receiver = Receiver::business(self::REGISTRY_CUIT, VatCondition::RESPONSABLE_INSCRIPTO);
-        $operation = 'homologation:' . bin2hex(random_bytes(8));
-        $result = $arca->issue($this->invoice(100000, receiver: $receiver), $operation);
-        self::assertAuthorized($result);
+        $invoice = $this->invoice(100000, receiver: $receiver);
+        $result = $arca->issue($invoice);
         if (self::registered()) {
             self::assertSame(InvoiceClass::A, $result->class);
         }
 
-        $credit = $arca->issue($arca->creditNote($operation, [self::item(5000)]), $operation . ':nc');
-        self::assertAuthorized($credit);
+        $credit = $arca->issue($this->note($invoice, InvoiceKind::CREDIT_NOTE, [self::item(5000)], $result));
         self::assertSame(InvoiceKind::CREDIT_NOTE, $credit->kind);
         self::assertSame($result->class, $credit->class);
 
-        $debit = $arca->issue($arca->debitNote($operation, [self::item(1000)]), $operation . ':nd');
-        self::assertAuthorized($debit);
+        $debit = $arca->issue($this->note($invoice, InvoiceKind::DEBIT_NOTE, [self::item(1000)], $result));
         self::assertSame(InvoiceKind::DEBIT_NOTE, $debit->kind);
         self::assertSame($result->class, $debit->class);
     }
 
     /** A note by period (PeriodoAsoc) has no original voucher: ARCA must accept it and return the same period. */
-    public function testCreditNoteForAnAssociatedPeriodIsAuthorizedAndReconciled(): void
+    public function testCreditNoteForAnAssociatedPeriodIsAuthorizedAndFoundAgain(): void
     {
         $today = new DateTimeImmutable('today', new DateTimeZone('America/Argentina/Buenos_Aires'));
         $period = new AssociatedPeriod(
@@ -282,19 +276,13 @@ final class ArcaHomologationTest extends TestCase
             otherTaxes: $template->otherTaxes,
             period: $period,
         );
-        $operation = 'homologation:' . bin2hex(random_bytes(8));
 
-        $result = (new Arca(self::$configuration))->issue($note, $operation);
-        self::assertSame(
-            Outcome::AUTHORIZED,
-            $result->outcome,
-            $result->reason . ' ' . implode(' | ', $result->observations),
-        );
+        $arca = new Arca(self::$configuration);
+        $result = $arca->issue($note);
         self::assertSame(InvoiceKind::CREDIT_NOTE, $result->kind);
 
-        $record = $this->record($operation);
         $found = $this->wsfe()->lookup(
-            $record['request']['FeCAEReq']['FeCabReq']['CbteTipo'],
+            InvoiceMapper::type($result->class, $result->kind),
             $result->salesPoint,
             $result->number,
         );
@@ -304,28 +292,23 @@ final class ArcaHomologationTest extends TestCase
             [WsResponse::field($returned, 'FchDesde'), WsResponse::field($returned, 'FchHasta')],
             'FECompConsultar must return the associated period that was sent.',
         );
-        self::assertSame(
-            [
-                'status' => 'authorized',
-                'cae' => $result->authorization->cae,
-                'expires' => $result->authorization->expiresOn->format('Y-m-d'),
-                'reconciled' => true,
-            ],
-            FiscalEvidence::lookup($found, $record['request']),
-        );
+        self::assertFoundAgain($arca, $note, $result);
     }
 
     public function testRejectedVoucherIsReportedAsRejectedWithObservations(): void
     {
-        // A dollar invoice whose exchange rate is far from the official one is a deterministic, harmless rejection.
-        $invoice = $this->invoice(1000, Currency::dollars('1', true));
-        $result = (new Arca(self::$configuration))->issue($invoice, 'homologation:' . bin2hex(random_bytes(8)));
-        self::assertSame(Outcome::REJECTED, $result->outcome);
-        self::assertNotSame([], $result->observations);
-        self::assertNull($result->authorization);
+        // A dollar invoice collected in pesos with a rate far from the official one is a deterministic, harmless
+        // rejection (10119). Collected in dollars, homologation does not check the rate and authorizes it.
+        $invoice = $this->invoice(1000, Currency::dollars('1', false));
+        try {
+            (new Arca(self::$configuration))->issue($invoice);
+            self::fail('Expected a rejection.');
+        } catch (InvoiceRejected $exception) {
+            self::assertNotSame([], $exception->observations);
+        }
     }
 
-    public function testDollarInvoiceAtTheOfficialRateIsAuthorizedAndReconciled(): void
+    public function testDollarInvoiceAtTheOfficialRateIsAuthorizedAndFoundAgain(): void
     {
         $quote = $this->wsfe()->execute('FEParamGetCotizacion', ['MonId' => 'DOL']);
         $rate = (string) WsResponse::field($quote, 'MonCotiz');
@@ -333,29 +316,33 @@ final class ArcaHomologationTest extends TestCase
             [$whole, $fraction] = explode('.', $rate);
             $rate = $whole . '.' . substr($fraction, 0, 6);
         }
+        $arca = new Arca(self::$configuration);
         $invoice = $this->invoice(1000, Currency::dollars($rate, false));
-        $operation = 'homologation:' . bin2hex(random_bytes(8));
-        $result = (new Arca(self::$configuration))->issue($invoice, $operation);
-        self::assertSame(
-            Outcome::AUTHORIZED,
-            $result->outcome,
-            $result->reason . ' ' . implode(' | ', $result->observations),
-        );
-        $record = $this->record($operation);
-        $found = $this->wsfe()->lookup(
-            $record['request']['FeCAEReq']['FeCabReq']['CbteTipo'],
-            $result->salesPoint,
-            $result->number,
-        );
-        self::assertSame('authorized', FiscalEvidence::lookup($found, $record['request'])['status']);
+        $result = $arca->issue($invoice);
+        self::assertFoundAgain($arca, $invoice, $result);
     }
 
-    private static function assertAuthorized(IssueResult $result): void
+    /** Passing the number as an earlier attempt must find the voucher in ARCA instead of issuing another. */
+    private static function assertFoundAgain(Arca $arca, Invoice $invoice, IssueResult $result): void
     {
-        self::assertSame(
-            Outcome::AUTHORIZED,
-            $result->outcome,
-            $result->reason . ' ' . implode(' | ', $result->observations),
+        $again = $arca->issue($invoice, previousNumber: $result->number);
+        self::assertSame($result->number, $again->number);
+        self::assertEquals($result->authorization, $again->authorization);
+        self::assertSame($result->qr, $again->qr);
+    }
+
+    /** @param list<Item> $items */
+    private function note(Invoice $original, InvoiceKind $kind, array $items, IssueResult $result): Invoice
+    {
+        return new Invoice(
+            $original->salesPoint,
+            $original->receiver,
+            $items,
+            $original->date,
+            currency: $original->currency,
+            kind: $kind,
+            original: $result->invoiceReference(),
+            otherTaxes: $items === $original->items ? $original->otherTaxes : [],
         );
     }
 
@@ -388,16 +375,6 @@ final class ArcaHomologationTest extends TestCase
             new DateTimeImmutable('today', new DateTimeZone('America/Argentina/Buenos_Aires')),
             currency: $currency,
             otherTaxes: [new OtherTax(OtherTaxType::GROSS_INCOME_PERCEPTION, 'Percepcion IIBB', $amount, '2.50')],
-        );
-    }
-
-    private function record(string $operation): array
-    {
-        $scope = 'wsfe:v1:homologation:' . self::$configuration->cuit;
-
-        return self::$configuration->storage->exclusively(
-            $scope,
-            static fn (IssuanceJournal $journal): array => $journal->all()[hash('sha256', $operation)],
         );
     }
 

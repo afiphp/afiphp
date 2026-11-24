@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Afiphp\Internal\WebServices;
 
 use Afiphp\Exceptions\InvalidResponseException;
-use Afiphp\Exceptions\SoapException;
 use Afiphp\Internal\WebServices\Contracts\SoapTransport;
 use Afiphp\NetworkOptions;
 use SoapClient;
@@ -53,21 +52,28 @@ final class NativeSoapTransport implements SoapTransport
         // ext-soap opens a socket directly and ignores the HTTP wrapper's timeout.
         // Limit the socket read timeout for this synchronous call, then restore the process setting.
         $previousTimeout = ini_get('default_socket_timeout');
+        // ext-soap reports TLS and DNS failures as warnings next to a generic SoapFault. Keep them to
+        // classify the fault, and never print them into an application's response.
+        $warnings = [];
+        set_error_handler(static function (int $level, string $message) use (&$warnings): bool {
+            $warnings[] = $message;
+
+            return true;
+        });
         try {
             if (ini_set('default_socket_timeout', (string) $this->options->readTimeout) === false) {
                 throw new \RuntimeException('Unable to configure the SOAP read timeout.');
             }
-            // ext-soap may emit warnings as well as SoapFault (for example on TLS failure).
-            // Expose the structured exception, not warning output in an application's response.
-            $response = @$this->client()->__soapCall($method, [$params]);
+            $response = $this->client()->__soapCall($method, [$params]);
         } catch (SoapFault $fault) {
-            throw SoapException::fromFault($fault);
+            throw Failures::fromFault($fault, implode(' ', $warnings));
         } finally {
+            restore_error_handler();
             ini_set('default_socket_timeout', $previousTimeout);
         }
 
         if ($response instanceof SoapFault) {
-            throw SoapException::fromFault($response);
+            throw Failures::fromFault($response, implode(' ', $warnings));
         }
 
         if (!is_object($response)) {

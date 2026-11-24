@@ -6,8 +6,6 @@ namespace Afiphp\Internal\WebServices;
 
 use Afiphp\Configuration;
 use Afiphp\Exceptions\InvalidResponseException;
-use Afiphp\Exceptions\ServiceErrorException;
-use Afiphp\Exceptions\SoapException;
 use Afiphp\Exceptions\WsException;
 use Afiphp\Internal\WebServices\Contracts\SoapTransport;
 use InvalidArgumentException;
@@ -61,9 +59,22 @@ abstract class AbstractWsAfip
             throw new InvalidArgumentException('Invalid SOAP method name.');
         }
         // No automatic retries: a lost authorization response may already be a valid invoice.
+        $started = hrtime(true);
+        $outcome = 'failed';
         try {
             $response = $this->transport->call($method, $params);
+            $outcome = 'answered';
+        } catch (Throwable $exception) {
+            $outcome = $exception::class;
+            throw $exception;
         } finally {
+            // Only the operation and its timing: requests carry personal data and credentials.
+            $this->configuration->logger->debug('ARCA call {service}.{method}: {outcome} in {milliseconds} ms', [
+                'service' => $this->service(),
+                'method' => $method,
+                'outcome' => $outcome,
+                'milliseconds' => intdiv(hrtime(true) - $started, 1_000_000),
+            ]);
             // Optional diagnostics must never mask the fiscal result or the transport exception.
             try {
                 $this->saveRequestAndResponse($method);
@@ -71,7 +82,7 @@ abstract class AbstractWsAfip
             }
         }
         if ($response instanceof SoapFault) {
-            throw SoapException::fromFault($response);
+            throw Failures::fromFault($response);
         }
         $result = property_exists($response, "{$method}Result") ? $response->{"{$method}Result"} : $response;
         if (!is_object($result)) {
@@ -84,12 +95,14 @@ abstract class AbstractWsAfip
             } catch (UnexpectedValueException $exception) {
                 throw new InvalidResponseException('Malformed ARCA error response.', $result, $method, $exception);
             }
-            $code = (int) $errors[0]->Code;
-            $class = $this->service() === self::WSFE && in_array($code, ServiceErrorException::CODES, true)
-                ? ServiceErrorException::class
-                : WsException::class;
+            $error = new WsException(
+                'ARCA Error: ' . implode(PHP_EOL, $messages),
+                (int) $errors[0]->Code,
+                errors: $errors,
+                response: $result,
+            );
 
-            throw new $class('ARCA Error: ' . implode(PHP_EOL, $messages), $code, errors: $errors, response: $result);
+            throw $this->service() === self::WSFE ? Failures::fromWsfeError($error) : $error;
         }
         if (!property_exists($result, 'ResultGet')) {
             return $result;

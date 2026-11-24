@@ -1,6 +1,6 @@
 # Referencia de la API
 
-[Inicio](../README.md) · [Facturación](facturacion.md) · [Conciliación](conciliacion.md)
+[Inicio](../README.md) · [Facturación](facturacion.md) · [Errores y reintentos](conciliacion.md)
 
 Todos los objetos son inmutables. Los importes son `int` en centavos y las
 fechas, `DateTimeImmutable`. Salvo que se indique otro, los tipos están en
@@ -13,23 +13,23 @@ fechas, `DateTimeImmutable`. Salvo que se indique otro, los tipos están en
 | Método | Devuelve | Hace |
 |---|---|---|
 | `preview(Invoice $invoice)` | `Preview` | Calcula clase e importes. Sin red. |
-| `issue(Invoice $invoice, ?string $operation = null)` | `IssueResult` | Emite. Con un ID repetido devuelve lo guardado. |
-| `recover(string $operation)` | `IssueResult` | Consulta una operación pendiente. No emite. |
-| `retry(string $operation)` | `IssueResult` | Reenvía el mismo pedido si ARCA confirma que no existe. |
-| `fullCreditNote(string $originalOperation, ?DateTimeImmutable $date = null)` | `Invoice` | Arma una nota de crédito total. No emite. |
-| `creditNote(string $originalOperation, array $items, array $otherTaxes = [], ?DateTimeImmutable $date = null)` | `Invoice` | Arma una nota de crédito parcial. No emite. |
-| `debitNote(string $originalOperation, array $items, array $otherTaxes = [], ?DateTimeImmutable $date = null)` | `Invoice` | Arma una nota de débito. No emite. |
-| `status()` | `Afiphp\ServiceStatus` | Estado de WSFE (`FEDummy`). No inicia sesión. |
-| `lastNumber(InvoiceClass $class, InvoiceKind $kind, int $salesPoint)` | `int` | Último número autorizado de la serie. No reserva. |
+| `issue(Invoice $invoice, ?int $previousNumber = null)` | `IssueResult` | Emite. Ver [errores y reintentos](conciliacion.md). |
+| `fullCreditNote(InvoiceReference $original, DateTimeImmutable $date, ?int $salesPoint = null)` | `Invoice` | Arma la [nota de crédito total](facturacion.md#nota-de-crédito-total) consultando el original. No emite. |
+| `voucher(InvoiceClass $class, int $salesPoint, int $number, InvoiceKind $kind = INVOICE)` | `?IssueResult` | [Consulta](facturacion.md#consultar-comprobantes) un comprobante autorizado. `null` si no existe. |
+| `lastNumber(int $salesPoint, InvoiceClass $class, InvoiceKind $kind = INVOICE)` | `int` | Último número autorizado de la serie; `0` si no hay. |
+| `check(?int $salesPoint = null)` | `void` | Prueba si se puede facturar ahora. Lanza `ArcaUnavailable` o `ConfigurationError`. |
+| `salesPoints()` | `list<Afiphp\SalesPoint>` | Puntos de venta que ARCA lista para web services. |
+| `status()` | `Afiphp\ServiceStatus` | Estado de WSFE (`FEDummy`). No usa el certificado. |
 | `dollarRate(?DateTimeImmutable $date = null)` | `string` | Cotización publicada por ARCA. |
 | `taxpayer(string $cuit)` | `?Taxpayer` | Consulta el Padrón A5. |
 | `cuitsByDni(string $dni)` | `list<string>` | Consulta el Padrón A13. |
 
-`recover()` y `retry()` lanzan `InvalidArgumentException` si el ID no existe.
+`status()` responde si ARCA funciona; `check()`, si este emisor puede facturar:
+un servicio disponible todavía puede rechazar el certificado o la CUIT. Ver
+[verificar la instalación](configuracion.md#verificar-la-instalación).
 
-`status()` no usa el certificado: un servicio disponible todavía puede rechazar
-el login o la CUIT. `lastNumber()` sí inicia sesión, así que también prueba el
-certificado y la autorización de `wsfe`.
+`CERTIFICATE_WARNING_DAYS` (30) es desde cuándo `check()` advierte que vence
+el certificado.
 
 ## Configuración
 
@@ -43,6 +43,7 @@ certificado y la autorización de `wsfe`.
 | `storage` | `Afiphp\Storage\Storage` | Obligatorio. |
 | `environment` | `Environment` | `HOMOLOGATION` |
 | `network` | `NetworkOptions` | `new NetworkOptions()` |
+| `logger` | `Psr\Log\LoggerInterface` | `new NullLogger()`. Ver [logs](configuracion.md#logs). |
 
 ### Credentials (`Afiphp`)
 
@@ -52,14 +53,14 @@ certificado y la autorización de `wsfe`.
 | `privateKey` | `string` | Obligatorio. Contenido PEM. |
 | `passphrase` | `string` | `''` |
 
-Expone `fingerprint` (SHA-256 del certificado DER).
+Expone `fingerprint` (SHA-256 del certificado DER), `validFrom` y `expiresAt`
+(`DateTimeImmutable`), e `isValidAt(?DateTimeImmutable $at = null): bool`.
 
 ### FileStorage (`Afiphp\Storage`)
 
 | Parámetro | Tipo | Predeterminado |
 |---|---|---|
 | `directory` | `string` | Obligatorio. |
-| `lockTimeout` | `int` | `120` segundos. |
 
 ### NetworkOptions (`Afiphp`)
 
@@ -68,8 +69,9 @@ Expone `fingerprint` (SHA-256 del certificado DER).
 | `connectionTimeout` | `int` | `10` segundos. |
 | `readTimeout` | `int` | `60` segundos. |
 | `saveSoapMessages` | `bool` | `false` |
-| `lockTimeout` | `int` | `10` segundos. |
+| `lockTimeout` | `int` | `10` segundos de espera del bloqueo de login. |
 | `allowLegacyTls` | `bool` | `false` |
+| `salesPointLockTimeout` | `int` | `120` segundos de espera a otra emisión en el mismo punto de venta. |
 
 Ver [configuración](configuracion.md) y [almacenamiento](almacenamiento.md).
 
@@ -129,25 +131,24 @@ Expone `amount`, `vat` (`?VatRate`) e `includesVat`.
 
 ### IssueResult
 
+Un comprobante autorizado: el que devuelve `issue()` o el que consulta
+`voucher()`.
+
 | Campo | Tipo | Contenido |
 |---|---|---|
-| `outcome` | `Outcome` | Ver [estados](conciliacion.md#qué-hacer-con-cada-estado). |
-| `operation` | `string` | ID de la operación. |
 | `class` | `InvoiceClass` | A, B o C. |
 | `kind` | `InvoiceKind` | |
 | `salesPoint` | `int` | |
-| `number` | `?int` | `null` si `BLOCKED`. Tener número no implica autorización. |
-| `date` | `DateTimeImmutable` | |
+| `number` | `int` | |
+| `date` | `DateTimeImmutable` | La de la autorización. Con `previousNumber`, puede ser anterior a la de la factura. |
 | `totals` | `Preview` | |
-| `authorization` | `?Authorization` | Solo en `AUTHORIZED`. |
-| `observations` | `list<string>` | Revisarlas también si se autorizó. |
-| `reason` | `?string` | Detalle técnico. |
-| `blockedBy` | `?string` | Operación que bloquea, si `BLOCKED`. |
-| `reconciled` | `bool` | `true` si se confirmó con una consulta posterior. |
-| `qr` | `?string` | URL del QR (RG 4892), solo en `AUTHORIZED`. |
+| `authorization` | `Authorization` | CAE y vencimiento. |
+| `observations` | `list<string>` | Revisarlas aunque se haya autorizado. |
+| `qr` | `string` | URL del QR (RG 4892). |
+| `receiver` | `?Receiver` | `null` solo en un comprobante consultado con receptor sin identificar. |
+| `currency` | `Currency` | |
 
-`invoiceReference()` devuelve la referencia para asociar una nota; lanza
-`LogicException` si no está autorizado.
+`invoiceReference()` devuelve la referencia para asociar una nota.
 
 ### QrCode
 
@@ -186,6 +187,12 @@ $url = QrCode::url(
 | `total` | `int` | Suma de todo lo anterior. |
 | `vatByRate` | `list<VatSubtotal>` | `rate`, `base` y `amount` por alícuota. Vacío en C. |
 
+### SalesPoint (`Afiphp`)
+
+Campos `number`, `emissionType` (`string`, como lo informa ARCA), `blocked`
+(`bool`) y `deregisteredOn` (`?DateTimeImmutable`). `isActive()` es `true` si
+no está bloqueado ni dado de baja.
+
 ### ServiceStatus (`Afiphp`)
 
 Campos `appServer`, `dbServer` y `authServer` (`string`, tal como los informa
@@ -198,6 +205,34 @@ Campos: `cuit`, `name`, `personType`, `vatCondition` (`?VatCondition`),
 `errors` (`list<string>`). `receiver()` crea el `Receiver` o lanza
 `LogicException` si `vatCondition` es `null`.
 
+## Impresión
+
+En `Afiphp\Printing`. Ver [comprobante impreso](impresion.md).
+
+`PrintableInvoice::build(Invoice $invoice, IssueResult $result, IssuerDetails $issuer, array $lines, string $saleConditions, ?ReceiverDetails $receiver = null, array $remitos = [])`
+
+| Constructor | Parámetros |
+|---|---|
+| `new IssuerDetails(cuit, vatCondition, legalName, address, grossIncome, activitiesStart, tradeName: null, paymentToInformedCbu: false)` | `activitiesStart` es `?DateTimeImmutable`, sin valor por defecto. |
+| `new PrintedLine(description, quantity: null, unitPrice: null, discount: 0, code: null, unit: null)` | `quantity` es un decimal como `string`; `unitPrice` y `discount`, centavos. |
+| `new ReceiverDetails(name: null, address: null)` | |
+
+`PrintableInvoice` expone `letter`, `code`, `title`, `letterLegend`, `number`,
+`date`, `issuer`, `issuerConditionLegend`, `receiverConditionLegend`,
+`receiverName`, `receiverAddress`, `receiverDocumentLabel`,
+`receiverDocument`, `saleConditions`, `remitos`, `service`, `currency`,
+`lines` (`list<PrintableLine>`), `subtotal`, `exempt`, `untaxed`,
+`vatByRate`, `otherTaxes`, `total`, `transparencyVat`,
+`transparencyOtherTaxes`, `cae`, `caeDueDate`, `qr` y `legends`.
+
+`PrintableLine` expone `description`, `quantity`, `unitPrice`, `discount`,
+`amount`, `vat` (solo en A), `code` y `unit`.
+
+## Línea de comandos
+
+`vendor/bin/afiphp init` y `vendor/bin/afiphp check`. Ver
+[configuración](configuracion.md#con-el-comando-afiphp).
+
 ## Enums
 
 | Enum | Casos |
@@ -209,7 +244,6 @@ Campos: `cuit`, `name`, `personType`, `vatCondition` (`?VatCondition`),
 | `InvoiceClass` | `A`, `B`, `C` |
 | `DocumentType` | `CUIT`, `CUIL`, `DNI` |
 | `OtherTaxType` | `NATIONAL`, `PROVINCIAL`, `MUNICIPAL`, `INTERNAL`, `GROSS_INCOME`, `VAT_PERCEPTION`, `GROSS_INCOME_PERCEPTION`, `MUNICIPAL_PERCEPTION`, `OTHER_PERCEPTION`, `OTHER` |
-| `Outcome` | `AUTHORIZED`, `REJECTED`, `INDETERMINATE`, `CONFLICT`, `BLOCKED` |
 
 Si tu sistema guarda los códigos de ARCA, convertilos con
 `VatCondition::fromArcaCode(int $code)` (`CondicionIVAReceptorId`) y
@@ -222,17 +256,15 @@ Las propias están en `Afiphp\Exceptions`.
 
 | Excepción | Indica |
 |---|---|
-| `InvalidArgumentException` | Datos inválidos, fecha fuera de ventana, PEM incorrecto u operación desconocida. |
-| `IdempotencyConflict` | El ID ya existe con otros datos y no fue rechazado. |
-| `IssuancePersistenceException` | Hubo resultado (`result`) pero no se pudo guardar. |
-| `SoapException` | Fallo de transporte. `getFaultCode()`, `getPrevious()`. |
-| `ConnectionException` | `SoapException` sin respuesta de ARCA: sin conexión, timeout o página de error HTTP. |
-| `WsException` | Error del servicio. `getErrors()`, `getResponse()`. |
-| `ServiceErrorException` | `WsException` con un error interno de WSFE (500, 501 o 502). |
-| `ServiceUnavailable` | Interfaz de `ConnectionException` y `ServiceErrorException`: ARCA no pudo procesar el pedido. |
+| `InvoiceRejected` | ARCA rechazó la factura. `observations`, `number`. |
+| `UnconfirmedIssue` | Se perdió la respuesta y no se pudo confirmar. `number`; la falla original en `getPrevious()`. |
+| `ArcaUnavailable` | ARCA no respondió o falló internamente. `sent` es `false` si el pedido no salió. |
+| `ConfigurationError` | Certificado, habilitación del servicio, reloj, TLS o un ticket tomado por otro almacenamiento. |
+| `WsException` | Otro error informado por ARCA. `getErrors()`, `getResponse()`. |
+| `SoapException` | Otra falla SOAP, como un pedido mal formado. `getFaultCode()`. |
 | `InvalidResponseException` | Respuesta inválida. `getResponse()`, `getOperation()`. |
-| `LogicException` | Uso no permitido del objeto. |
-| `RuntimeException` | Fallos de almacenamiento, bloqueos o secuencia. |
+| `InvalidArgumentException` | Datos inválidos o PEM incorrecto. Se lanza antes de contactar ARCA. |
+| `UnexpectedValueException` | `voucher()` encontró un comprobante que afiphp no modela (otra moneda, CAEA). |
+| `LockTimeout` | Otro worker retuvo el bloqueo de emisión o de login más que el tiempo de espera. No se envió nada. |
 
-Ninguna excepción significa “no se emitió”. Ver
-[manejo de excepciones](conciliacion.md#excepciones).
+Ver [qué hacer con cada una](conciliacion.md#qué-puede-pasar-al-emitir).

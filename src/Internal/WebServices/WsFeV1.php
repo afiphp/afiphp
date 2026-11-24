@@ -6,10 +6,13 @@ namespace Afiphp\Internal\WebServices;
 
 use Afiphp\Billing\Currency;
 use Afiphp\Configuration;
+use Afiphp\Exceptions\ArcaUnavailable;
 use Afiphp\Exceptions\InvalidResponseException;
+use Afiphp\Exceptions\WsException;
 use Afiphp\Internal\Billing\FiscalGateway;
 use Afiphp\Internal\WebServices\Contracts\SoapTransport;
 use Afiphp\Internal\WebServices\Contracts\TicketProvider;
+use Afiphp\SalesPoint;
 use Afiphp\ServiceStatus;
 use DateTimeImmutable;
 use InvalidArgumentException;
@@ -33,7 +36,12 @@ final class WsFeV1 extends AbstractWsAfip implements FiscalGateway
     public function execute(string $method, array $params = []): object
     {
         if ($method !== 'FEDummy') {
-            $params['Auth'] = $this->auth();
+            try {
+                $params['Auth'] = $this->auth();
+            } catch (ArcaUnavailable $exception) {
+                // The login failed, so this request was never sent.
+                throw new ArcaUnavailable($exception->getMessage(), false, $exception);
+            }
         }
 
         return parent::execute($method, $params);
@@ -52,6 +60,57 @@ final class WsFeV1 extends AbstractWsAfip implements FiscalGateway
         }
 
         return new ServiceStatus(...$servers);
+    }
+
+    public function salesPoints(): array
+    {
+        try {
+            $response = $this->execute('FEParamGetPtosVenta');
+        } catch (WsException $exception) {
+            // ARCA answers "no results" (602) instead of an empty list.
+            if (Failures::isNotFound($exception)) {
+                return [];
+            }
+            throw $exception;
+        }
+        $points = [];
+        foreach (WsResponse::items($response->PtoVenta ?? null) as $point) {
+            $number = WsResponse::field($point, 'Nro');
+            $type = WsResponse::field($point, 'EmisionTipo');
+            $blocked = WsResponse::field($point, 'Bloqueado');
+            $deregistered = WsResponse::field($point, 'FchBaja');
+            if (
+                !self::isDigits($number, 5)
+                || (int) $number < 1
+                || !is_string($type)
+                || !in_array($blocked, ['S', 'N'], true)
+                || !is_string($deregistered) && $deregistered !== null
+            ) {
+                throw new InvalidResponseException(
+                    'ARCA returned an invalid sales point.',
+                    $response,
+                    'FEParamGetPtosVenta',
+                );
+            }
+            $date = null;
+            if ($deregistered !== null && strtoupper(trim($deregistered)) !== 'NULL' && trim($deregistered) !== '') {
+                $date = \DateTimeImmutable::createFromFormat(
+                    '!Ymd',
+                    $deregistered,
+                    new \DateTimeZone('America/Argentina/Buenos_Aires'),
+                );
+                if ($date === false || $date->format('Ymd') !== $deregistered) {
+                    throw new InvalidResponseException(
+                        'ARCA returned an invalid sales point deregistration date.',
+                        $response,
+                        'FEParamGetPtosVenta',
+                    );
+                }
+            }
+            $points[] = new SalesPoint((int) $number, trim($type), $blocked === 'S', $date);
+        }
+
+        return $points;
     }
 
     public function lastNumber(int $type, int $salesPoint): int

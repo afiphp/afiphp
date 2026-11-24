@@ -14,8 +14,9 @@ final readonly class NetworkOptions
         public bool $saveSoapMessages = false,
         public int $lockTimeout = 10,
         public bool $allowLegacyTls = false,
+        public int $salesPointLockTimeout = 120,
     ) {
-        if ($connectionTimeout < 1 || $readTimeout < 1 || $lockTimeout < 1) {
+        if ($connectionTimeout < 1 || $readTimeout < 1 || $lockTimeout < 1 || $salesPointLockTimeout < 1) {
             throw new InvalidArgumentException('Timeouts must be positive seconds.');
         }
     }

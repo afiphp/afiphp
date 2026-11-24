@@ -4,11 +4,9 @@ declare(strict_types=1);
 
 namespace Tests;
 
-use Afiphp\Exceptions\ConnectionException;
+use Afiphp\Exceptions\ArcaUnavailable;
+use Afiphp\Exceptions\ConfigurationError;
 use Afiphp\Exceptions\InvalidResponseException;
-use Afiphp\Exceptions\ServiceErrorException;
-use Afiphp\Exceptions\ServiceUnavailable;
-use Afiphp\Exceptions\SoapException;
 use Afiphp\Exceptions\WsException;
 use Afiphp\Internal\WebServices\Ticket;
 use Afiphp\Internal\WebServices\WsFeV1;
@@ -55,50 +53,20 @@ final class InfrastructureTest extends TestCase
         $this->wsfe($transport)->status();
     }
 
-    public function testFailedHttpExchangeIsAnUnavailableService(): void
+    public function testNoSalesPointsIsAnEmptyListButNotAConfigurationError(): void
     {
-        $transport = new FakeTransport(static fn (): object => new \SoapFault('HTTP', 'Could not connect to host'));
-        try {
-            $this->wsfe($transport)->status();
-            self::fail('Expected a connection failure.');
-        } catch (ConnectionException $exception) {
-            self::assertInstanceOf(ServiceUnavailable::class, $exception);
-            self::assertSame('HTTP', $exception->getFaultCode());
-        }
-    }
-
-    public function testFaultAnsweredByTheServerIsNotAnUnavailableService(): void
-    {
-        $transport = new FakeTransport(static fn (): object => new \SoapFault('Server', 'Invalid request'));
-        try {
-            $this->wsfe($transport)->lookup(1, 2, 50);
-            self::fail('Expected a SOAP fault.');
-        } catch (SoapException $exception) {
-            self::assertNotInstanceOf(ServiceUnavailable::class, $exception);
-        }
-    }
-
-    public function testWsfeInternalErrorIsAnUnavailableServiceButValidationErrorsAreNot(): void
-    {
-        $error = static fn (int $code): FakeTransport => new FakeTransport(static fn (): object => (object) [
-            'FECompConsultarResult' => (object) ['Errors' => (object) ['Err' => [(object) [
+        $answer = static fn (int $code): FakeTransport => new FakeTransport(static fn (): object => (object) [
+            'FEParamGetPtosVentaResult' => (object) ['Errors' => (object) ['Err' => [(object) [
                 'Code' => $code,
                 'Msg' => 'Error',
             ]]]],
         ]);
-        try {
-            $this->wsfe($error(501))->lookup(1, 2, 50);
-            self::fail('Expected an internal error.');
-        } catch (ServiceErrorException $exception) {
-            self::assertInstanceOf(WsException::class, $exception);
-            self::assertSame(501, $exception->getCode());
-        }
-        try {
-            $this->wsfe($error(10016))->lookup(1, 2, 50);
-            self::fail('Expected a validation error.');
-        } catch (WsException $exception) {
-            self::assertNotInstanceOf(ServiceUnavailable::class, $exception);
-        }
+        $transport = $answer(602);
+        self::assertSame([], $this->wsfe($transport)->salesPoints());
+        self::assertSame('FEParamGetPtosVenta', $transport->calls[0][0]);
+        self::assertArrayHasKey('Auth', $transport->calls[0][1]);
+        $this->expectException(ConfigurationError::class);
+        $this->wsfe($answer(601))->salesPoints();
     }
 
     public function testRefreshesExpiredCredentialsWithoutLosingAStillValidTicketEarly(): void
@@ -215,8 +183,8 @@ final class InfrastructureTest extends TestCase
         try {
             $this->wsfe($transport)->lookup(1, 2, 50);
             self::fail('Expected SOAP failure.');
-        } catch (SoapException $exception) {
-            self::assertNotInstanceOf(WsException::class, $exception);
+        } catch (ArcaUnavailable $exception) {
+            self::assertTrue($exception->sent);
             self::assertCount(1, $transport->calls);
         }
     }

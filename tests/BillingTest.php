@@ -270,14 +270,6 @@ final class BillingTest extends TestCase
         );
     }
 
-    public function testInvoiceKindValuesArePersistedTokensAndMustNotChange(): void
-    {
-        self::assertSame(
-            ['INVOICE', 'CREDIT_NOTE', 'DEBIT_NOTE'],
-            array_map(static fn (InvoiceKind $kind): string => $kind->value, InvoiceKind::cases()),
-        );
-    }
-
     /**
      * Property: for every gross (VAT-included) amount the split is exact (base + VAT = gross) and the VAT
      * stays within one cent of base * rate, which is what ARCA checks per AlicIva row.
@@ -619,14 +611,14 @@ final class BillingTest extends TestCase
         );
     }
 
-    #[DataProvider('invalidSerializedDates')]
-    public function testPersistedDatesCannotBeSilentlyNormalizedByPhp(string $value): void
+    #[DataProvider('invalidDates')]
+    public function testDatesCannotBeSilentlyNormalizedByPhp(string $value): void
     {
         $this->expectException(InvalidArgumentException::class);
         InvoiceMapper::parseDate($value);
     }
 
-    public static function invalidSerializedDates(): array
+    public static function invalidDates(): array
     {
         return [
             ['2026-02-30'],

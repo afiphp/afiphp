@@ -67,8 +67,11 @@ final class FiscalEvidence
         }
     }
 
-    /** Missing or unparsable fields never establish a match. Differences never release the sequence. */
-    public static function lookup(object $found, array $request): array
+    /**
+     * Missing or unparsable fields never establish a match. With $anyDate, the voucher may carry
+     * another date: an earlier attempt sent on another day.
+     */
+    public static function lookup(object $found, array $request, bool $anyDate = false): array
     {
         if (!empty($found->Errors)) {
             return self::unknown('lookup_has_global_errors');
@@ -80,7 +83,10 @@ final class FiscalEvidence
             'CbteTipo' => $sentHeader['CbteTipo'],
             'PtoVta' => $sentHeader['PtoVta'],
         ] + $sent as $field => $expected) {
-            if (in_array($field, ['Iva', 'CbtesAsoc', 'Tributos', 'PeriodoAsoc'], true)) {
+            if (
+                in_array($field, ['Iva', 'CbtesAsoc', 'Tributos', 'PeriodoAsoc'], true)
+                || $anyDate && $field === 'CbteFch'
+            ) {
                 continue;
             }
             $actual = $found->{$field} ?? null;
@@ -156,7 +162,11 @@ final class FiscalEvidence
                 ];
             }
         }
-        $authorization = self::code($found->CodAutorizacion ?? null, $found->FchVto ?? null, $sent['CbteFch']);
+        $date = $anyDate ? self::integer($found->CbteFch ?? null) : $sent['CbteFch'];
+        $authorization =
+            $date === null || strlen($date) !== 8
+                ? null
+                : self::code($found->CodAutorizacion ?? null, $found->FchVto ?? null, $date);
         if (
             $missing
             || ($found->Resultado ?? null) !== 'A'
@@ -170,7 +180,7 @@ final class FiscalEvidence
             'status' => 'authorized',
             'cae' => $authorization->cae,
             'expires' => $authorization->expiresOn->format('Y-m-d'),
-            'reconciled' => true,
+            'date' => substr($date, 0, 4) . '-' . substr($date, 4, 2) . '-' . substr($date, 6, 2),
         ];
     }
 
@@ -214,7 +224,7 @@ final class FiscalEvidence
         }
     }
 
-    private static function integer(mixed $value): ?string
+    public static function integer(mixed $value): ?string
     {
         if (!is_int($value) && !is_string($value) || !preg_match('/^[0-9]+$/D', (string) $value)) {
             return null;
@@ -228,7 +238,8 @@ final class FiscalEvidence
         return $normalized !== null && $normalized === self::integer($right);
     }
 
-    private static function decimal(mixed $value, int $scale): ?string
+    /** A non-negative decimal normalized to $scale places, or null when it is not one. */
+    public static function decimal(mixed $value, int $scale): ?string
     {
         if (is_float($value)) {
             if (!is_finite($value) || $value < 0) {

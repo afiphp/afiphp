@@ -40,8 +40,9 @@ Variables opcionales:
 | `ARCA_STORAGE` | Directorio temporal + `/afiphp-homologation-` + CUIT. |
 
 La suite cubre facturas a consumidor final, a responsable inscripto y en
-dólares; notas totales, parciales, de débito y por período; conciliación; un
-rechazo; los catálogos de ARCA y el Padrón.
+dólares; notas totales (con `fullCreditNote()`), parciales, de débito y por
+período; consultas con `voucher()` y `lastNumber()`; `check()` con el punto de
+venta; conciliación; un rechazo; los catálogos de ARCA y el Padrón.
 Las pruebas del Padrón se saltean si el certificado no tiene
 `ws_sr_constancia_inscripcion` o `ws_sr_padron_a13`. Usan la CUIT `30500010912`
 y el DNI `20173159`, que existen en el Padrón de prueba; si ARCA los quita,

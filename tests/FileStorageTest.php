@@ -7,11 +7,11 @@ namespace Tests;
 use Afiphp\Arca;
 use Afiphp\Billing\Invoice;
 use Afiphp\Billing\Item;
-use Afiphp\Billing\Outcome;
 use Afiphp\Billing\Receiver;
 use Afiphp\Billing\VatCondition;
 use Afiphp\Billing\VatRate;
 use Afiphp\Configuration;
+use Afiphp\Exceptions\LockTimeout;
 use Afiphp\Internal\WebServices\WsAa;
 use Afiphp\Internal\WebServices\WsFeV1;
 use Afiphp\Storage\FileStorage;
@@ -36,12 +36,12 @@ final class FileStorageTest extends TestCase
         ));
         self::assertInstanceOf(Arca::class, $arca);
         self::assertSame(
-            ['issuance', 'tickets'],
+            ['locks', 'tickets'],
             array_values(array_diff(scandir($this->directory . '/storage'), ['.', '..'])),
         );
         self::assertSame(0700, fileperms($this->directory . '/storage') & 0777);
         self::assertSame(0700, fileperms($this->directory . '/storage/tickets') & 0777);
-        self::assertSame(0700, fileperms($this->directory . '/storage/issuance') & 0777);
+        self::assertSame(0700, fileperms($this->directory . '/storage/locks') & 0777);
         self::assertSame([], glob($this->directory . '/storage/*/*'));
     }
 
@@ -59,6 +59,38 @@ final class FileStorageTest extends TestCase
         self::assertNull($storage->readTicket('../not-an-existing-key'));
     }
 
+    public function testSalesPointLocksExcludeTheSameKeyOnlyAndAreNotTicketLocks(): void
+    {
+        $storage = $this->storage();
+        $result = $storage->withSalesPointLock('homologation-20111111112-2', 1, function () use ($storage): string {
+            // Another key, and the ticket lock with the same key, stay free.
+            self::assertSame('other', $storage->withSalesPointLock(
+                'homologation-20111111112-3',
+                1,
+                static fn () => 'other',
+            ));
+            self::assertSame('ticket', $storage->withTicketLock(
+                'homologation-20111111112-2',
+                1,
+                static fn () => 'ticket',
+            ));
+            try {
+                $this->storage()->withSalesPointLock('homologation-20111111112-2', 1, static fn () => 'twice');
+                self::fail('Expected the sales point to be locked.');
+            } catch (LockTimeout) {
+            }
+
+            return 'done';
+        });
+        self::assertSame('done', $result);
+        self::assertSame('again', $storage->withSalesPointLock(
+            'homologation-20111111112-2',
+            1,
+            static fn () => 'again',
+        ));
+        self::assertSame(0600, fileperms(glob($this->directory . '/storage/locks/*.lock')[0]) & 0777);
+    }
+
     public function testRefusesAnExistingPublicDirectoryWithoutChangingItsPermissions(): void
     {
         mkdir($this->directory . '/public', 0700);
@@ -72,7 +104,7 @@ final class FileStorageTest extends TestCase
         }
     }
 
-    public function testAuthenticationAndIssuanceUseOneStorageWithoutPersistingThePrivateKey(): void
+    public function testAuthenticationSharesOneStorageWithoutPersistingThePrivateKey(): void
     {
         $identity = $this->identity();
         $storage = $this->storage();
@@ -107,13 +139,10 @@ final class FileStorageTest extends TestCase
                 [Item::netAmount(15000, VatRate::STANDARD_21)],
                 new DateTimeImmutable('today', new DateTimeZone('America/Argentina/Buenos_Aires')),
             ),
-            'sale',
         );
-        self::assertSame(Outcome::AUTHORIZED, $result->outcome);
         self::assertCount(1, $login->calls);
         self::assertCount(2, $transport->calls);
         self::assertCount(1, glob($this->directory . '/storage/tickets/*.xml'));
-        self::assertCount(1, glob($this->directory . '/storage/issuance/*.json'));
         $reopened = new WsAa($this->configuration(credentials: $identity), $login);
         self::assertSame('shared-token', $reopened->ticket('wsfe')->token);
         self::assertCount(1, $login->calls);
