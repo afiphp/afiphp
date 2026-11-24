@@ -15,6 +15,7 @@ use Afiphp\Exceptions\ArcaUnavailable;
 use Afiphp\Exceptions\ConfigurationError;
 use Afiphp\Exceptions\InvoiceRejected;
 use Afiphp\Exceptions\LockTimeout;
+use Afiphp\Exceptions\NeedsReconciliation;
 use Afiphp\Exceptions\UnconfirmedIssue;
 use Afiphp\Internal\WebServices\Failures;
 use DateTimeImmutable;
@@ -93,6 +94,17 @@ final class Issuance
                 ],
             );
             throw $exception;
+        } catch (NeedsReconciliation $exception) {
+            $logger->error(
+                'Voucher {number} needs manual reconciliation with ARCA: {message}',
+                $context
+                + [
+                    'number' => $exception->number,
+                    'message' => $exception->getMessage(),
+                    'exception' => $exception,
+                ],
+            );
+            throw $exception;
         } catch (ConfigurationError $exception) {
             // Nobody can invoice until an administrator fixes it.
             $logger->error(
@@ -131,7 +143,12 @@ final class Issuance
     {
         $nextNumber = $this->gateway->lastNumber($type, $invoice->salesPoint) + 1;
         if ($nextNumber < $unconfirmedNumber) {
-            throw new InvalidArgumentException('The unconfirmed number is ahead of the fiscal sequence.');
+            throw new NeedsReconciliation(
+                $unconfirmedNumber,
+                "Voucher {$unconfirmedNumber} is ahead of ARCA's sequence, which is at "
+                . ($nextNumber - 1)
+                . '. Nothing was sent: reconcile it manually before issuing again.',
+            );
         }
 
         $compare = FiscalEvidence::lookupForRetry(...);
@@ -148,7 +165,8 @@ final class Issuance
             }
             if ($found === VoucherLookup::Empty) {
                 // ARCA contradicts itself. Retrying cannot settle it, so do not ask for a retry.
-                throw new RuntimeException(
+                throw new NeedsReconciliation(
+                    $unconfirmedNumber,
                     "ARCA reports voucher {$unconfirmedNumber} as used but cannot find it. Nothing was sent: "
                     . 'reconcile it manually before issuing again.',
                 );

@@ -264,8 +264,8 @@ Las propias están en `Afiphp\Exceptions`.
 | `WsException` | Otro error informado por ARCA. `getErrors()`, `getResponse()`. |
 | `SoapException` | Otra falla SOAP, como un pedido mal formado. `getFaultCode()`. |
 | `InvalidResponseException` | Respuesta inválida. `getResponse()`, `getOperation()`. |
-| `InvalidArgumentException` | Datos inválidos o PEM incorrecto. Se lanza antes de contactar ARCA, salvo en `retryIssue()` con un número más adelante que la secuencia: consulta el último número, pero no envía nada. |
-| `RuntimeException` | `retryIssue()` encontró que ARCA informa el número como usado pero no lo encuentra. No se envió nada; se concilia a mano. |
+| `InvalidArgumentException` | Datos inválidos o PEM incorrecto. Se lanza antes de contactar ARCA. |
+| `NeedsReconciliation` | `retryIssue()`: el número está más adelante que la secuencia de ARCA, o ARCA lo informa como usado pero no lo encuentra. `number`. No se envió nada; se concilia a mano. |
 | `UnexpectedValueException` | `voucher()` encontró un comprobante que afiphp no modela (otra moneda, CAEA). |
 | `LockTimeout` | Otro worker retuvo el bloqueo de emisión o de login más que el tiempo de espera. No se envió nada. |
 

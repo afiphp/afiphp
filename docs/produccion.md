@@ -61,12 +61,16 @@ de lo que habilitaste en WSASS sirve en producción.
   tenga un número sin confirmar.
 - No cambies los datos de una factura con un número sin confirmar, salvo la
   fecha.
+- Cuando una factura se autoriza con un número, borralo de cualquier otra que
+  lo tenga guardado como sin confirmar: ese intento no llegó, y `retryIssue()`
+  podría tomar una factura idéntica como propia (ver
+  [facturas idénticas](conciliacion.md#facturas-idénticas)).
 
 ## 5. Monitoreo
 
-- Alertá con los registros `error` (emisión sin confirmar o configuración
-  rechazada: nadie puede facturar hasta corregirla) y `warning` (rechazos,
-  ARCA sin responder y certificado por vencer).
+- Alertá con los registros `error` (emisión sin confirmar, número a conciliar
+  a mano o configuración rechazada, que impide facturar hasta corregirla) y
+  `warning` (rechazos, ARCA sin responder y certificado por vencer).
 - Llamá a `check()` una vez por día, por ejemplo desde un cron: avisa 30 días
   antes de que venza el certificado, y falla si ARCA dejó de aceptarlo.
 - Los certificados de ARCA vencen. Renovalo con un CSR nuevo antes de

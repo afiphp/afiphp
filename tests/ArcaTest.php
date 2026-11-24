@@ -21,6 +21,7 @@ use Afiphp\Environment;
 use Afiphp\Exceptions\ArcaUnavailable;
 use Afiphp\Exceptions\ConfigurationError;
 use Afiphp\Exceptions\InvoiceRejected;
+use Afiphp\Exceptions\NeedsReconciliation;
 use Afiphp\Exceptions\UnconfirmedIssue;
 use Afiphp\Exceptions\WsException;
 use Afiphp\ServiceStatus;
@@ -377,10 +378,8 @@ final class ArcaTest extends TestCase
         try {
             $this->client($gateway)->retryIssue($this->intent(), 50);
             self::fail('Expected a contradictory sequence to need manual reconciliation.');
-        } catch (UnconfirmedIssue) {
-            self::fail('A retry cannot settle a contradictory sequence.');
-        } catch (\RuntimeException $exception) {
-            self::assertStringContainsString('reconcile it manually', $exception->getMessage());
+        } catch (NeedsReconciliation $exception) {
+            self::assertSame(50, $exception->number);
         }
         self::assertSame(['last', 'lookup'], array_column($gateway->calls, 0));
     }
@@ -432,7 +431,8 @@ final class ArcaTest extends TestCase
         try {
             $this->client($gateway)->retryIssue($this->intent(), 50);
             self::fail('Expected a number ahead of the sequence to be refused.');
-        } catch (\InvalidArgumentException) {
+        } catch (NeedsReconciliation $exception) {
+            self::assertSame(50, $exception->number);
             self::assertSame(['last'], array_column($gateway->calls, 0));
         }
     }

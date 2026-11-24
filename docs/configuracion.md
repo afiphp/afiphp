@@ -149,7 +149,7 @@ new Configuration(..., logger: $logger);
 | `debug` | Cada llamada a ARCA: servicio, operación, resultado y duración. Sin el contenido. |
 | `info` | Logins de WSAA y comprobantes autorizados (número y CAE). |
 | `warning` | Comprobantes rechazados, con las observaciones de ARCA; emisiones que no salieron porque ARCA no respondió o por el bloqueo de otra emisión; un certificado por vencer. |
-| `error` | Emisiones sin confirmar, con el número que hay que guardar, y configuración rechazada por ARCA (certificado, habilitación, reloj o TLS). |
+| `error` | Emisiones sin confirmar, con el número que hay que guardar; números que hay que conciliar a mano (`NeedsReconciliation`); configuración rechazada por ARCA (certificado, habilitación, reloj o TLS). |
 
 Nunca registra certificados, claves, tickets ni datos del receptor.
 

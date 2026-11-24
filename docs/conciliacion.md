@@ -10,7 +10,7 @@ intento y vos lo guardás con la factura.
 ## Qué puede pasar al emitir
 
 ```php
-use Afiphp\Exceptions\{ArcaUnavailable, ConfigurationError, InvoiceRejected, LockTimeout, UnconfirmedIssue};
+use Afiphp\Exceptions\{ArcaUnavailable, ConfigurationError, InvoiceRejected, LockTimeout, NeedsReconciliation, UnconfirmedIssue};
 
 try {
     $result = $venta->numeroSinConfirmar === null
@@ -27,6 +27,8 @@ try {
     // Certificado, habilitación, reloj o TLS. Esperar no lo resuelve.
 } catch (LockTimeout $e) {
     // Otra emisión en el mismo punto de venta tardó demasiado. No se envió nada: repetí.
+} catch (NeedsReconciliation $e) {
+    // Solo retryIssue(): ARCA contradice el número $e->number. Revisalo a mano antes de reintentar.
 }
 ```
 
@@ -38,6 +40,7 @@ try {
 | `ArcaUnavailable` | ARCA no respondió y el pedido no salió, o no pudo procesarlo. | Repetir más tarde. |
 | `ConfigurationError` | ARCA no acepta el pedido por la configuración del emisor. | Avisar a un administrador. |
 | `LockTimeout` | Otro worker retuvo el bloqueo del punto de venta, o el del login, más de lo permitido. No se envió nada. | Repetir. |
+| `NeedsReconciliation` | Solo `retryIssue()`: la numeración de ARCA contradice el número sin confirmar. No se envió nada. | Revisar `$e->number` a mano en ARCA antes de reintentar. |
 
 `ArcaUnavailable`, `ConfigurationError` y `LockTimeout` no cambian nada: si había un número sin
 confirmar, sigue igual.
@@ -63,7 +66,7 @@ compara con el número guardado. Por ejemplo, si guardaste el 50:
 |---|---|
 | 50 o más | Consulta el 50. Si es la misma factura, devuelve su CAE y su fecha. Si es otro comprobante, emite con el siguiente número de la secuencia que leyó. |
 | 49 | Envía con el 50. Ante un rechazo, consulta el 50. Si encuentra la misma factura, devuelve su CAE. Si está libre o contiene otro comprobante, propaga el rechazo. |
-| 48 o menos | Lanza `InvalidArgumentException` sin enviar una solicitud de autorización. |
+| 48 o menos | Lanza `NeedsReconciliation` sin enviar una solicitud de autorización. |
 
 Si no se puede comprobar qué pasó, por ejemplo porque se pierde también la
 respuesta del reintento, `retryIssue()` lanza `UnconfirmedIssue` con el número
@@ -71,13 +74,33 @@ que corresponde guardar.
 
 Si el último autorizado es 50 o más pero ARCA no encuentra el 50, ARCA se
 contradice y reintentar no lo resuelve: `retryIssue()` lanza
-`RuntimeException` sin enviar nada. Conciliá ese número a mano con ARCA.
+`NeedsReconciliation` sin enviar nada. Conciliá ese número a mano con ARCA.
 
 `retryIssue()` compara los datos fiscales sin la fecha del comprobante, porque
 el reintento puede hacerse otro día. Conservá los datos originales, pero poné
 una fecha que ARCA acepte, por ejemplo la de hoy: si reenvía con una fecha
 vieja, ARCA la rechaza. Usá `retryIssue()` para una factura sin confirmar:
 llamar a `issue()` podría emitirla otra vez con un número nuevo.
+
+### Facturas idénticas
+
+"La misma factura" quiere decir **un comprobante con los mismos datos**. ARCA
+no guarda ningún identificador de tu aplicación, así que dos facturas con el
+mismo receptor, los mismos importes y el mismo tipo son indistinguibles, aunque
+sean ventas distintas. Por ejemplo:
+
+1. La factura #1 se envía con el 50 y la respuesta se pierde: queda sin
+   confirmar. En realidad no llegó a ARCA.
+2. La factura #2, idéntica (mismo cliente y mismo importe), se emite con
+   `issue()` y ARCA le da el 50, que estaba libre.
+3. `retryIssue()` de la #1 con el 50 encuentra la #2 y la devuelve como si
+   fuera la #1: las dos quedan con el mismo número y el mismo CAE, y la #1
+   nunca se emitió.
+
+Tu aplicación sí sabe qué es suyo: **cuando una factura se autoriza con un
+número, borrá ese número de cualquier otra factura que lo tenga guardado como
+sin confirmar**. Si ARCA se lo dio a otra, ese intento no llegó, y la factura
+se emite con `issue()`.
 
 ## Antes de emitir
 

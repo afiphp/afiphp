@@ -66,6 +66,7 @@ echo "Total: {$result->totals->total} centavos\n"; // 18150 = $181,50.
 | `ArcaUnavailable` | Esperar y repetir. |
 | `ConfigurationError` | Revisar certificado, habilitaciones, reloj o TLS. |
 | `LockTimeout` | Otra emisión ocupaba el punto de venta; no se envió nada. Repetir. |
+| `NeedsReconciliation` | Solo en `retryIssue()`: ARCA contradice el número sin confirmar. Revisarlo a mano. |
 
 **Si se pierde la respuesta de ARCA, la factura puede existir.** Por eso, ante
 `UnconfirmedIssue`, no emitas de nuevo sin el número: ver

@@ -24,6 +24,7 @@ use Afiphp\Exceptions\ArcaUnavailable;
 use Afiphp\Exceptions\ConfigurationError;
 use Afiphp\Exceptions\InvalidResponseException;
 use Afiphp\Exceptions\LockTimeout;
+use Afiphp\Exceptions\NeedsReconciliation;
 use Afiphp\Exceptions\UnconfirmedIssue;
 use Afiphp\Exceptions\WsException;
 use Afiphp\SalesPoint;
@@ -196,6 +197,29 @@ final class QueriesTest extends TestCase
             $this->logger->messages('error'),
         );
         self::assertSame(['The voucher was not issued: Could not connect to host'], $this->logger->messages('warning'));
+    }
+
+    public function testANumberToReconcileIsLoggedAsAnError(): void
+    {
+        $gateway = new FakeFiscalGateway();
+        $gateway->last = 48;
+        try {
+            $this->client($gateway)->retryIssue(
+                new Invoice(
+                    2,
+                    Receiver::finalConsumerWithDni('12345678'),
+                    [Item::amount(12100, VatRate::STANDARD_21)],
+                    self::today(),
+                ),
+                50,
+            );
+            self::fail('Expected a number to reconcile.');
+        } catch (NeedsReconciliation) {
+        }
+        self::assertStringStartsWith(
+            'Voucher 50 needs manual reconciliation with ARCA',
+            $this->logger->messages('error')[0] ?? '',
+        );
     }
 
     /** A login that waits for another worker never reached ARCA: nothing to look up. */

@@ -236,8 +236,10 @@ final class Arca
 
     /**
      * Resolves an unconfirmed attempt before issuing again. The invoice must match the original
-     * attempt except for its date, which must be one that ARCA still accepts. Throws RuntimeException
-     * when ARCA reports the number as used but cannot find it: reconcile that voucher manually.
+     * attempt except for its date, which must be one that ARCA still accepts. Throws NeedsReconciliation
+     * when ARCA's sequence contradicts the number: reconcile that voucher manually.
+     * A voucher is matched by its data, not its identity: when another of your invoices is authorized with
+     * this number, the attempt never landed; clear the kept number and issue() instead.
      */
     public function retryIssue(Invoice $invoice, int $unconfirmedNumber): IssueResult
     {
