@@ -209,7 +209,7 @@ $result = $arca->issue($note);
   exactamente: un receptor sin identificar (documento 99), otra moneda, datos
   opcionales de ARCA o un IVA que no es la base por la alícuota redondeada una
   vez. En ese caso, armá la nota con ítems explícitos.
-- Para un reintento con `previousNumber`, guardá la nota o volvé a armarla:
+- Para un reintento con `retryIssue()`, guardá la nota o volvé a armarla:
   sale igual mientras el original no cambie.
 
 ## Consultar comprobantes

@@ -187,15 +187,16 @@ final class ArcaTest extends TestCase
     public function testAnUnreachableArcaKeepsAnEarlierAttemptWithoutSending(): void
     {
         $gateway = new FakeFiscalGateway();
+        $gateway->last = 50;
         $failure = new ArcaUnavailable('Timeout', true);
         $gateway->onLookup = static fn (): object => throw $failure;
         try {
-            $this->client($gateway)->issue($this->intent(), previousNumber: 50);
+            $this->client($gateway)->retryIssue($this->intent(), unconfirmedNumber: 50);
             self::fail('Expected ARCA to be unavailable.');
         } catch (ArcaUnavailable $exception) {
             self::assertSame($failure, $exception);
         }
-        self::assertSame(['lookup'], array_column($gateway->calls, 0));
+        self::assertSame(['last', 'lookup'], array_column($gateway->calls, 0));
     }
 
     #[DataProvider('contradictoryAuthorizations')]
@@ -283,13 +284,13 @@ final class ArcaTest extends TestCase
         $first = $gateway->calls[1];
         $gateway->calls = [1 => $first];
         if (!$other) {
-            self::assertSame(50, self::unconfirmed(fn () => $client->issue($this->intent(), $number)));
-            self::assertSame(['authorize', 'lookup'], array_column($gateway->calls, 0));
+            self::assertSame(50, self::unconfirmed(fn () => $client->retryIssue($this->intent(), $number)));
+            self::assertSame(['authorize', 'last', 'lookup'], array_column($gateway->calls, 0));
             return;
         }
-        $result = $client->issue($this->intent(), $number);
+        $result = $client->retryIssue($this->intent(), $number);
         self::assertSame(51, $result->number);
-        self::assertSame(['authorize', 'lookup', 'last', 'authorize'], array_column($gateway->calls, 0));
+        self::assertSame(['authorize', 'last', 'lookup', 'authorize'], array_column($gateway->calls, 0));
     }
 
     public static function lookups(): array
@@ -311,54 +312,140 @@ final class ArcaTest extends TestCase
     public function testAnEarlierAttemptFoundOnAnotherDayIsTheResult(): void
     {
         $gateway = new FakeFiscalGateway();
+        $gateway->last = 50;
         $monday = self::today()->modify('-6 days');
         $earlier = $this->request($this->intent(date: $monday), 50);
         $gateway->onLookup = static fn (): object => FakeFiscalGateway::found($earlier);
-        $result = $this->client($gateway)->issue($this->intent(), previousNumber: 50);
+        $result = $this->client($gateway)->retryIssue($this->intent(), unconfirmedNumber: 50);
         self::assertSame([50, $monday->format('Y-m-d')], [$result->number, $result->date->format('Y-m-d')]);
-        self::assertSame(['lookup'], array_column($gateway->calls, 0));
+        self::assertSame(['last', 'lookup'], array_column($gateway->calls, 0));
+    }
+
+    public function testANewIssueDoesNotRecoverAVoucherWithADifferentDate(): void
+    {
+        $gateway = new FakeFiscalGateway();
+        $earlier = $this->request($this->intent(date: self::today()->modify('-1 day')), 50);
+        $gateway->onAuthorize = static fn (): object => throw new ArcaUnavailable('Timeout', true);
+        $gateway->onLookup = static fn (): object => FakeFiscalGateway::found($earlier);
+
+        self::assertSame(50, self::unconfirmed(fn () => $this->client($gateway)->issue($this->intent())));
+        self::assertSame(['last', 'authorize', 'lookup'], array_column($gateway->calls, 0));
     }
 
     public function testAnEarlierAttemptThatNeverLandedIsSentAgainWithItsNumberAndTodaysDate(): void
     {
         $gateway = new FakeFiscalGateway();
-        $gateway->onLookup = static fn (): object => throw self::notFound();
-        $result = $this->client($gateway)->issue($this->intent(), previousNumber: 50);
+        $result = $this->client($gateway)->retryIssue($this->intent(), unconfirmedNumber: 50);
         self::assertSame(50, $result->number);
-        self::assertSame(['lookup', 'authorize'], array_column($gateway->calls, 0));
+        self::assertSame(['last', 'authorize'], array_column($gateway->calls, 0));
         $sent = $gateway->calls[1][1]['FeCAEReq']['FeDetReq']['FECAEDetRequest'][0];
         self::assertSame([50, self::today()->format('Ymd')], [$sent['CbteDesde'], $sent['CbteFch']]);
     }
 
     /** ARCA refuses the resend when the earlier attempt took the number after all. */
-    public function testARefusedResendLooksTheNumberUpAgain(): void
+    public function testARefusedResendLooksUpTheNumber(): void
     {
         $earlier = $this->request($this->intent(date: self::today()->modify('-1 day')), 50);
         $gateway = new FakeFiscalGateway();
-        $lookups = 0;
-        $gateway->onLookup = static function () use (&$lookups, $earlier): object {
-            if (++$lookups === 1) {
-                throw self::notFound();
-            }
-            return FakeFiscalGateway::found($earlier);
-        };
+        $gateway->onLookup = static fn (): object => FakeFiscalGateway::found($earlier);
         $gateway->onAuthorize = self::rejecting(10016, 'Numero ya utilizado');
-        $result = $this->client($gateway)->issue($this->intent(), previousNumber: 50);
+        $result = $this->client($gateway)->retryIssue($this->intent(), unconfirmedNumber: 50);
         self::assertSame(50, $result->number);
-        self::assertSame(['lookup', 'authorize', 'lookup'], array_column($gateway->calls, 0));
+        self::assertSame(['last', 'authorize', 'lookup'], array_column($gateway->calls, 0));
 
         $gateway->onLookup = static fn (): object => throw self::notFound();
         $gateway->onAuthorize = self::rejecting(10015, 'Receptor invalido');
         $this->expectExceptionObject(new InvoiceRejected(50, ['(10015) Receptor invalido']));
-        $this->client($gateway)->issue($this->intent(), previousNumber: 50);
+        $this->client($gateway)->retryIssue($this->intent(), unconfirmedNumber: 50);
     }
 
     public function testAnEarlierAttemptThatCannotBeLookedUpSendsNothing(): void
     {
         $gateway = new FakeFiscalGateway();
+        $gateway->last = 50;
         $gateway->onLookup = static fn (): object => throw new \RuntimeException('Unavailable');
-        self::assertSame(50, self::unconfirmed(fn () => $this->client($gateway)->issue($this->intent(), 50)));
-        self::assertSame(['lookup'], array_column($gateway->calls, 0));
+        self::assertSame(50, self::unconfirmed(fn () => $this->client($gateway)->retryIssue($this->intent(), 50)));
+        self::assertSame(['last', 'lookup'], array_column($gateway->calls, 0));
+    }
+
+    public function testAnEmptyLookupForANumberBehindTheSequenceSendsNothing(): void
+    {
+        $gateway = new FakeFiscalGateway();
+        $gateway->last = 51;
+        $gateway->onLookup = static fn (): object => throw self::notFound();
+
+        try {
+            $this->client($gateway)->retryIssue($this->intent(), 50);
+            self::fail('Expected a contradictory sequence to need manual reconciliation.');
+        } catch (UnconfirmedIssue) {
+            self::fail('A retry cannot settle a contradictory sequence.');
+        } catch (\RuntimeException $exception) {
+            self::assertStringContainsString('reconcile it manually', $exception->getMessage());
+        }
+        self::assertSame(['last', 'lookup'], array_column($gateway->calls, 0));
+    }
+
+    /** The earlier request lands on the number while the retry waits for its own answer. */
+    public function testALostRetryAnswerRecoversTheEarlierAttemptFromAnotherDay(): void
+    {
+        $gateway = new FakeFiscalGateway();
+        $monday = self::today()->modify('-6 days');
+        $earlier = $this->request($this->intent(date: $monday), 50);
+        $gateway->onAuthorize = static fn (): object => throw new ArcaUnavailable('Timeout', true);
+        $gateway->onLookup = static fn (): object => FakeFiscalGateway::found($earlier);
+
+        $result = $this->client($gateway)->retryIssue($this->intent(), unconfirmedNumber: 50);
+        self::assertSame([50, $monday->format('Y-m-d')], [$result->number, $result->date->format('Y-m-d')]);
+        self::assertSame(['last', 'authorize', 'lookup'], array_column($gateway->calls, 0));
+    }
+
+    /** Once the earlier number is settled, the new voucher is compared strictly, date included. */
+    public function testANewVoucherAfterASettledRetryIsComparedWithItsDate(): void
+    {
+        $gateway = new FakeFiscalGateway();
+        $gateway->last = 50;
+        $other = $this->request($this->intent(net: 99900), 50);
+        $stale = $this->request($this->intent(date: self::today()->modify('-1 day')), 51);
+        $gateway->onLookup = static fn (int $type, int $salesPoint, int $number): object => FakeFiscalGateway::found(
+            $number === 50 ? $other : $stale,
+        );
+        $gateway->onAuthorize = static fn (): object => throw new ArcaUnavailable('Timeout', true);
+
+        self::assertSame(51, self::unconfirmed(fn () => $this->client($gateway)->retryIssue($this->intent(), 50)));
+        self::assertSame(['last', 'lookup', 'authorize', 'lookup'], array_column($gateway->calls, 0));
+    }
+
+    public function testAFailedLookupAfterARejectedRetryKeepsTheNumberUnconfirmed(): void
+    {
+        $gateway = new FakeFiscalGateway();
+        $gateway->onAuthorize = self::rejecting(10016, 'Numero ya utilizado');
+        $gateway->onLookup = static fn (): object => throw new ArcaUnavailable('Timeout', true);
+
+        self::assertSame(50, self::unconfirmed(fn () => $this->client($gateway)->retryIssue($this->intent(), 50)));
+        self::assertSame(['last', 'authorize', 'lookup'], array_column($gateway->calls, 0));
+    }
+
+    public function testAnUnconfirmedNumberAheadOfTheNextNumberSendsNothing(): void
+    {
+        $gateway = new FakeFiscalGateway();
+        $gateway->last = 48;
+        try {
+            $this->client($gateway)->retryIssue($this->intent(), 50);
+            self::fail('Expected a number ahead of the sequence to be refused.');
+        } catch (\InvalidArgumentException) {
+            self::assertSame(['last'], array_column($gateway->calls, 0));
+        }
+    }
+
+    public function testTheOldPositionalRetryCallSendsNothing(): void
+    {
+        $gateway = new FakeFiscalGateway();
+        try {
+            $this->client($gateway)->issue($this->intent(), 50);
+            self::fail('Expected the old retry call to be refused.');
+        } catch (\InvalidArgumentException) {
+            self::assertSame([], $gateway->calls);
+        }
     }
 
     #[DataProvider('periodLookup')]
@@ -450,12 +537,12 @@ final class ArcaTest extends TestCase
         $this->client($gateway)->check();
     }
 
-    public function testThePreviousNumberMustBeAVoucherNumber(): void
+    public function testTheUnconfirmedNumberMustBeAVoucherNumber(): void
     {
         $gateway = new FakeFiscalGateway();
         try {
-            $this->client($gateway)->issue($this->intent(), previousNumber: 0);
-            self::fail('Expected an invalid previous number.');
+            $this->client($gateway)->retryIssue($this->intent(), unconfirmedNumber: 0);
+            self::fail('Expected an invalid unconfirmed number.');
         } catch (\InvalidArgumentException) {
             self::assertSame([], $gateway->calls);
         }

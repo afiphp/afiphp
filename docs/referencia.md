@@ -13,7 +13,8 @@ fechas, `DateTimeImmutable`. Salvo que se indique otro, los tipos están en
 | Método | Devuelve | Hace |
 |---|---|---|
 | `preview(Invoice $invoice)` | `Preview` | Calcula clase e importes. Sin red. |
-| `issue(Invoice $invoice, ?int $previousNumber = null)` | `IssueResult` | Emite. Ver [errores y reintentos](conciliacion.md). |
+| `issue(Invoice $invoice)` | `IssueResult` | Emite un comprobante nuevo. |
+| `retryIssue(Invoice $invoice, int $unconfirmedNumber)` | `IssueResult` | Retoma un intento sin confirmar. Ver [errores y reintentos](conciliacion.md). |
 | `fullCreditNote(InvoiceReference $original, DateTimeImmutable $date, ?int $salesPoint = null)` | `Invoice` | Arma la [nota de crédito total](facturacion.md#nota-de-crédito-total) consultando el original. No emite. |
 | `voucher(InvoiceClass $class, int $salesPoint, int $number, InvoiceKind $kind = INVOICE)` | `?IssueResult` | [Consulta](facturacion.md#consultar-comprobantes) un comprobante autorizado. `null` si no existe. |
 | `lastNumber(int $salesPoint, InvoiceClass $class, InvoiceKind $kind = INVOICE)` | `int` | Último número autorizado de la serie; `0` si no hay. |
@@ -140,7 +141,7 @@ Un comprobante autorizado: el que devuelve `issue()` o el que consulta
 | `kind` | `InvoiceKind` | |
 | `salesPoint` | `int` | |
 | `number` | `int` | |
-| `date` | `DateTimeImmutable` | La de la autorización. Con `previousNumber`, puede ser anterior a la de la factura. |
+| `date` | `DateTimeImmutable` | La de la autorización. Con `retryIssue()`, puede ser anterior a la de la factura. |
 | `totals` | `Preview` | |
 | `authorization` | `Authorization` | CAE y vencimiento. |
 | `observations` | `list<string>` | Revisarlas aunque se haya autorizado. |
@@ -263,7 +264,8 @@ Las propias están en `Afiphp\Exceptions`.
 | `WsException` | Otro error informado por ARCA. `getErrors()`, `getResponse()`. |
 | `SoapException` | Otra falla SOAP, como un pedido mal formado. `getFaultCode()`. |
 | `InvalidResponseException` | Respuesta inválida. `getResponse()`, `getOperation()`. |
-| `InvalidArgumentException` | Datos inválidos o PEM incorrecto. Se lanza antes de contactar ARCA. |
+| `InvalidArgumentException` | Datos inválidos o PEM incorrecto. Se lanza antes de contactar ARCA, salvo en `retryIssue()` con un número más adelante que la secuencia: consulta el último número, pero no envía nada. |
+| `RuntimeException` | `retryIssue()` encontró que ARCA informa el número como usado pero no lo encuentra. No se envió nada; se concilia a mano. |
 | `UnexpectedValueException` | `voucher()` encontró un comprobante que afiphp no modela (otra moneda, CAEA). |
 | `LockTimeout` | Otro worker retuvo el bloqueo de emisión o de login más que el tiempo de espera. No se envió nada. |
 

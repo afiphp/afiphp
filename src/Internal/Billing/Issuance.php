@@ -18,14 +18,11 @@ use Afiphp\Exceptions\LockTimeout;
 use Afiphp\Exceptions\UnconfirmedIssue;
 use Afiphp\Internal\WebServices\Failures;
 use DateTimeImmutable;
+use InvalidArgumentException;
 use RuntimeException;
 use Throwable;
 
-/**
- * @internal One submission, and one lookup when its answer is lost. Nothing is stored: the application
- * keeps the number of an unconfirmed attempt and passes it back as $previousNumber. Issuances on one
- * sales point are serialized through the storage, so two workers never race for the same number.
- */
+/** @internal Serializes emission and reconciliation for each sales point. */
 final class Issuance
 {
     public function __construct(
@@ -33,12 +30,34 @@ final class Issuance
         private FiscalGateway $gateway,
     ) {}
 
-    public function issue(Invoice $invoice, ?int $previousNumber): IssueResult
+    public function issue(Invoice $invoice): IssueResult
+    {
+        return $this->withSalesPointLock($invoice, function (Preview $totals, int $type) use ($invoice): IssueResult {
+            $number = $this->gateway->lastNumber($type, $invoice->salesPoint) + 1;
+
+            return $this->issueNumber($invoice, $totals, $type, $number, FiscalEvidence::lookup(...));
+        });
+    }
+
+    public function retryIssue(Invoice $invoice, int $unconfirmedNumber): IssueResult
+    {
+        if ($unconfirmedNumber < 1 || $unconfirmedNumber > 99999999) {
+            throw new InvalidArgumentException('The unconfirmed number must be from 1 through 99999999.');
+        }
+
+        return $this->withSalesPointLock($invoice, fn (Preview $totals, int $type): IssueResult => $this->retryLocked(
+            $invoice,
+            $totals,
+            $type,
+            $unconfirmedNumber,
+        ));
+    }
+
+    /** @param callable(Preview, int): IssueResult $operation */
+    private function withSalesPointLock(Invoice $invoice, callable $operation): IssueResult
     {
         $totals = InvoiceCalculator::calculate($invoice, $this->configuration->vatCondition);
-        if ($previousNumber !== null && ($previousNumber < 1 || $previousNumber > 99999999)) {
-            throw new \InvalidArgumentException('The previous number must be from 1 through 99999999.');
-        }
+        $type = InvoiceMapper::type($totals->class, $invoice->kind);
         $configuration = $this->configuration;
         $key = "{$configuration->environment->value}-{$configuration->cuit}-{$invoice->salesPoint}";
         $logger = $configuration->logger;
@@ -52,7 +71,7 @@ final class Issuance
             $result = $configuration->storage->withSalesPointLock(
                 $key,
                 $configuration->network->salesPointLockTimeout,
-                fn (): IssueResult => $this->issueLocked($invoice, $totals, $previousNumber),
+                fn (): IssueResult => $operation($totals, $type),
             );
         } catch (InvoiceRejected $exception) {
             $logger->warning(
@@ -66,7 +85,7 @@ final class Issuance
             throw $exception;
         } catch (UnconfirmedIssue $exception) {
             $logger->error(
-                'ARCA did not confirm voucher {number}; keep it as previousNumber',
+                'ARCA did not confirm voucher {number}; keep it for retryIssue()',
                 $context
                 + [
                     'number' => $exception->number,
@@ -108,36 +127,66 @@ final class Issuance
         return $result;
     }
 
-    private function issueLocked(Invoice $invoice, Preview $totals, ?int $previousNumber): IssueResult
+    private function retryLocked(Invoice $invoice, Preview $totals, int $type, int $unconfirmedNumber): IssueResult
     {
-        $type = InvoiceMapper::type($totals->class, $invoice->kind);
-        $detail = InvoiceMapper::detail($invoice, $totals, $this->configuration->cuit);
-        $number = null;
-
-        if ($previousNumber !== null) {
-            // The earlier attempt may have landed on another day: its date does not identify it.
-            $earlier = $this->lookup($invoice, $totals, $type, $detail, $previousNumber, anyDate: true);
-            if ($earlier instanceof IssueResult) {
-                return $earlier;
-            }
-            if ($earlier instanceof ArcaUnavailable || $earlier instanceof ConfigurationError) {
-                // Nothing was sent this time: the earlier attempt is just as unconfirmed as before.
-                throw $earlier;
-            }
-            if ($earlier instanceof Throwable) {
-                throw new UnconfirmedIssue($previousNumber, $earlier);
-            }
-            // Still empty: resending that number can never duplicate, because ARCA only accepts the next one.
-            // Another voucher there means the earlier attempt never landed: issue as new.
-            $number = $earlier === 'not_found' ? $previousNumber : null;
+        $nextNumber = $this->gateway->lastNumber($type, $invoice->salesPoint) + 1;
+        if ($nextNumber < $unconfirmedNumber) {
+            throw new InvalidArgumentException('The unconfirmed number is ahead of the fiscal sequence.');
         }
 
-        $number ??= $this->gateway->lastNumber($type, $invoice->salesPoint) + 1;
+        $compare = FiscalEvidence::lookupForRetry(...);
+        if ($nextNumber > $unconfirmedNumber) {
+            try {
+                $found = $this->lookup($invoice, $totals, $type, $unconfirmedNumber, $compare);
+            } catch (ArcaUnavailable|ConfigurationError|LockTimeout $exception) {
+                throw $exception;
+            } catch (Throwable $exception) {
+                throw new UnconfirmedIssue($unconfirmedNumber, $exception);
+            }
+            if ($found instanceof IssueResult) {
+                return $found;
+            }
+            if ($found === VoucherLookup::Empty) {
+                // ARCA contradicts itself. Retrying cannot settle it, so do not ask for a retry.
+                throw new RuntimeException(
+                    "ARCA reports voucher {$unconfirmedNumber} as used but cannot find it. Nothing was sent: "
+                    . 'reconcile it manually before issuing again.',
+                );
+            }
+
+            // The earlier request can only land on its own number, which is settled: this is a new issue.
+            return $this->issueNumber($invoice, $totals, $type, $nextNumber, FiscalEvidence::lookup(...));
+        }
+
+        // The earlier request can still take this number. Recover its CAE after any rejection.
+        try {
+            return $this->issueNumber($invoice, $totals, $type, $nextNumber, $compare);
+        } catch (InvoiceRejected $exception) {
+            try {
+                $found = $this->lookup($invoice, $totals, $type, $nextNumber, $compare);
+            } catch (Throwable $lookupFailure) {
+                throw new UnconfirmedIssue($nextNumber, $lookupFailure);
+            }
+            if ($found instanceof IssueResult) {
+                return $found;
+            }
+
+            throw $exception;
+        }
+    }
+
+    /** @param callable(object, array): array $compare */
+    private function issueNumber(
+        Invoice $invoice,
+        Preview $totals,
+        int $type,
+        int $number,
+        callable $compare,
+    ): IssueResult {
         if ($number > 99999999) {
             throw new RuntimeException('The fiscal sequence is exhausted. Nothing was sent.');
         }
-        $detail['CbteDesde'] = $detail['CbteHasta'] = $number;
-        $request = self::request($invoice->salesPoint, $type, $detail);
+        $request = $this->request($invoice, $totals, $type, $number);
         $failure = null;
         try {
             $evidence = FiscalEvidence::authorization(
@@ -168,42 +217,40 @@ final class Issuance
                 $evidence['observations'],
             );
         }
-        $resent = $number === $previousNumber;
-        if ($evidence['status'] === 'rejected' && !$resent) {
-            throw new InvoiceRejected($number, $evidence['observations']);
-        }
-
-        // The answer was lost, or ARCA refused a resend that the earlier attempt may have beaten to the number.
-        $found = $this->lookup($invoice, $totals, $type, $detail, $number, anyDate: $resent);
-        if ($found instanceof IssueResult) {
-            return $found;
-        }
         if ($evidence['status'] === 'rejected') {
             throw new InvoiceRejected($number, $evidence['observations']);
         }
 
-        throw new UnconfirmedIssue($number, $failure ?? ($found instanceof Throwable ? $found : null));
+        try {
+            $found = $this->lookup($invoice, $totals, $type, $number, $compare);
+        } catch (Throwable $exception) {
+            throw new UnconfirmedIssue($number, $failure ?? $exception);
+        }
+        if ($found instanceof IssueResult) {
+            return $found;
+        }
+
+        throw new UnconfirmedIssue($number, $failure);
     }
 
-    /**
-     * ARCA's voucher at $number as this invoice's result, 'not_found', 'other' for a different voucher,
-     * or the failure that left it unknown.
-     */
+    /** @param callable(object, array): array $compare */
     private function lookup(
         Invoice $invoice,
         Preview $totals,
         int $type,
-        array $detail,
         int $number,
-        bool $anyDate,
-    ): IssueResult|string|Throwable {
-        $detail['CbteDesde'] = $detail['CbteHasta'] = $number;
+        callable $compare,
+    ): IssueResult|VoucherLookup {
         try {
             $found = $this->gateway->lookup($type, $invoice->salesPoint, $number);
         } catch (Throwable $exception) {
-            return Failures::isNotFound($exception) ? 'not_found' : $exception;
+            if (Failures::isNotFound($exception)) {
+                return VoucherLookup::Empty;
+            }
+
+            throw $exception;
         }
-        $evidence = FiscalEvidence::lookup($found, self::request($invoice->salesPoint, $type, $detail), $anyDate);
+        $evidence = $compare($found, $this->request($invoice, $totals, $type, $number));
 
         return match ($evidence['status']) {
             'authorized' => $this->authorized(
@@ -214,8 +261,8 @@ final class Issuance
                 new Authorization($evidence['cae'], InvoiceMapper::parseDate($evidence['expires'])),
                 [],
             ),
-            'conflict' => 'other',
-            default => new RuntimeException("ARCA's voucher could not be compared: {$evidence['reason']}."),
+            'conflict' => VoucherLookup::Other,
+            default => throw new RuntimeException("ARCA's voucher could not be compared: {$evidence['reason']}."),
         };
     }
 
@@ -252,11 +299,14 @@ final class Issuance
         );
     }
 
-    private static function request(int $salesPoint, int $type, array $detail): array
+    private function request(Invoice $invoice, Preview $totals, int $type, int $number): array
     {
+        $detail = InvoiceMapper::detail($invoice, $totals, $this->configuration->cuit);
+        $detail['CbteDesde'] = $detail['CbteHasta'] = $number;
+
         return [
             'FeCAEReq' => [
-                'FeCabReq' => ['CantReg' => 1, 'PtoVta' => $salesPoint, 'CbteTipo' => $type],
+                'FeCabReq' => ['CantReg' => 1, 'PtoVta' => $invoice->salesPoint, 'CbteTipo' => $type],
                 'FeDetReq' => ['FECAEDetRequest' => [$detail]],
             ],
         ];

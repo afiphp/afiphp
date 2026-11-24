@@ -171,9 +171,9 @@ de emisión, si están bloqueados y su fecha de baja.
 
 afiphp no guarda nada sobre las facturas: la numeración la lleva ARCA. Podés
 empezar a usarla en un sistema que ya emite sin migrar datos. Si el sistema
-anterior dejó una factura sin confirmar, pasá su número como `previousNumber`
-la primera vez. Con [`voucher()`](facturacion.md#consultar-comprobantes) podés
-leer lo que ese sistema emitió, y con `fullCreditNote()`, anularlo.
+anterior dejó una factura sin confirmar, pasá su número a `retryIssue()`. Con
+[`voucher()`](facturacion.md#consultar-comprobantes) podés leer lo que ese
+sistema emitió, y con `fullCreditNote()`, anularlo.
 
 Antes de emitir el primer comprobante real, repasá
 [Pasar a producción](produccion.md).

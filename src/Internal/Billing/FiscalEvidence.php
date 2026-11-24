@@ -67,26 +67,36 @@ final class FiscalEvidence
         }
     }
 
-    /**
-     * Missing or unparsable fields never establish a match. With $anyDate, the voucher may carry
-     * another date: an earlier attempt sent on another day.
-     */
-    public static function lookup(object $found, array $request, bool $anyDate = false): array
+    public static function lookup(object $found, array $request): array
+    {
+        return self::compareVoucher(
+            $found,
+            $request['FeCAEReq']['FeCabReq'],
+            $request['FeCAEReq']['FeDetReq']['FECAEDetRequest'][0],
+        );
+    }
+
+    /** An earlier attempt may have been sent on another day. */
+    public static function lookupForRetry(object $found, array $request): array
+    {
+        $sent = $request['FeCAEReq']['FeDetReq']['FECAEDetRequest'][0];
+        unset($sent['CbteFch']);
+
+        return self::compareVoucher($found, $request['FeCAEReq']['FeCabReq'], $sent);
+    }
+
+    /** Missing or unparsable fields never establish a match. */
+    private static function compareVoucher(object $found, array $sentHeader, array $sent): array
     {
         if (!empty($found->Errors)) {
             return self::unknown('lookup_has_global_errors');
         }
-        $sentHeader = $request['FeCAEReq']['FeCabReq'];
-        $sent = $request['FeCAEReq']['FeDetReq']['FECAEDetRequest'][0];
         $missing = false;
         foreach ([
             'CbteTipo' => $sentHeader['CbteTipo'],
             'PtoVta' => $sentHeader['PtoVta'],
         ] + $sent as $field => $expected) {
-            if (
-                in_array($field, ['Iva', 'CbtesAsoc', 'Tributos', 'PeriodoAsoc'], true)
-                || $anyDate && $field === 'CbteFch'
-            ) {
+            if (in_array($field, ['Iva', 'CbtesAsoc', 'Tributos', 'PeriodoAsoc'], true)) {
                 continue;
             }
             $actual = $found->{$field} ?? null;
@@ -162,7 +172,7 @@ final class FiscalEvidence
                 ];
             }
         }
-        $date = $anyDate ? self::integer($found->CbteFch ?? null) : $sent['CbteFch'];
+        $date = self::integer($found->CbteFch ?? null);
         $authorization =
             $date === null || strlen($date) !== 8
                 ? null

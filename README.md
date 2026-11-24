@@ -62,7 +62,7 @@ echo "Total: {$result->totals->total} centavos\n"; // 18150 = $181,50.
 | Excepción | Qué hacer |
 |---|---|
 | `InvoiceRejected` | Corregir según `$e->observations` y emitir de nuevo. |
-| `UnconfirmedIssue` | Guardar `$e->number` con la factura y pasarlo como `previousNumber` en el próximo intento. |
+| `UnconfirmedIssue` | Guardar `$e->number` con la factura y pasarlo a `retryIssue()` en el próximo intento. |
 | `ArcaUnavailable` | Esperar y repetir. |
 | `ConfigurationError` | Revisar certificado, habilitaciones, reloj o TLS. |
 | `LockTimeout` | Otra emisión ocupaba el punto de venta; no se envió nada. Repetir. |

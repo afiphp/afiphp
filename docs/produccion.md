@@ -57,8 +57,8 @@ de lo que habilitaste en WSASS sirve en producción.
 - Ante `UnconfirmedIssue`, guardá `$e->number` con la venta, en la misma
   transacción en la que registrás el intento. Es lo único que evita duplicar la
   factura en el próximo intento (ver [errores y reintentos](conciliacion.md)).
-- No envuelvas `issue()` en reintentos automáticos ni en un `retry` de la cola
-  sin pasar `previousNumber`.
+- En reintentos automáticos y colas, llamá a `retryIssue()` cuando la venta
+  tenga un número sin confirmar.
 - No cambies los datos de una factura con un número sin confirmar, salvo la
   fecha.
 

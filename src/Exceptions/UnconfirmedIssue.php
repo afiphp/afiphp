@@ -8,8 +8,8 @@ use RuntimeException;
 use Throwable;
 
 /**
- * ARCA's answer was lost and a lookup could not confirm it: the voucher may exist with $number.
- * Keep $number with the invoice and pass it to Arca::issue() as $previousNumber on the next attempt.
+ * The voucher may exist with $number, but the attempt could not be confirmed.
+ * Keep $number with the invoice and pass it to Arca::retryIssue() on the next attempt.
  */
 final class UnconfirmedIssue extends RuntimeException
 {

@@ -150,14 +150,14 @@ final class ArcaProtocolTest extends TestCase
             self::assertSame(50, $exception->number);
         }
         self::assertSame(1, $attempt);
-        self::assertSame(50, $client->issue($invoice, $exception->number)->number);
+        self::assertSame(50, $client->retryIssue($invoice, $exception->number)->number);
         self::assertSame(2, $attempt);
         self::assertSame(
             [
                 'FECompUltimoAutorizado',
                 'FECAESolicitar',
                 'FECompConsultar',
-                'FECompConsultar',
+                'FECompUltimoAutorizado',
                 'FECAESolicitar',
             ],
             array_column($transport->calls, 0),

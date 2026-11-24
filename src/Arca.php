@@ -172,7 +172,7 @@ final class Arca
     /**
      * A credit note for the whole voucher: it looks the original up in ARCA and mirrors its receiver,
      * currency, exchange rate, amounts by VAT rate and other taxes. Issue it with issue(), like any
-     * invoice; keep it, or build it again, for a retry with previousNumber. Throws
+     * invoice; keep it, or build it again, for retryIssue(). Throws
      * InvalidArgumentException when ARCA does not have the original with that date, or when its amounts
      * cannot be reproduced exactly: then issue the note with explicit items.
      */
@@ -221,14 +221,27 @@ final class Arca
     }
 
     /**
-     * Sends the invoice once with the next number. If the answer is lost, looks that number up once.
-     * Throws UnconfirmedIssue when it still cannot tell: keep its number with the invoice and pass it
-     * as $previousNumber on the next attempt, which looks it up first and never issues twice.
-     * The invoice must not change while an attempt is unconfirmed, except for its date.
+     * Sends a new invoice with the next number. If the answer is lost, looks up that number once.
+     * If UnconfirmedIssue is thrown, keep its number with the invoice for retryIssue().
      */
-    public function issue(Invoice $invoice, ?int $previousNumber = null): IssueResult
+    public function issue(Invoice $invoice): IssueResult
     {
-        return $this->issuance->issue($invoice, $previousNumber);
+        // PHP otherwise ignores extra positional arguments to user-defined methods.
+        if (func_num_args() > 1) {
+            throw new InvalidArgumentException('Use retryIssue() to pass an unconfirmed voucher number.');
+        }
+
+        return $this->issuance->issue($invoice);
+    }
+
+    /**
+     * Resolves an unconfirmed attempt before issuing again. The invoice must match the original
+     * attempt except for its date, which must be one that ARCA still accepts. Throws RuntimeException
+     * when ARCA reports the number as used but cannot find it: reconcile that voucher manually.
+     */
+    public function retryIssue(Invoice $invoice, int $unconfirmedNumber): IssueResult
+    {
+        return $this->issuance->retryIssue($invoice, $unconfirmedNumber);
     }
 
     private function find(InvoiceClass $class, int $salesPoint, int $number, InvoiceKind $kind): ?FoundVoucher

@@ -322,10 +322,37 @@ final class ArcaHomologationTest extends TestCase
         self::assertFoundAgain($arca, $invoice, $result);
     }
 
+    /** An unconfirmed attempt that never reached ARCA: the retry sends with that same number. */
+    public function testRetryOfTheNextNumberSendsWithThatNumber(): void
+    {
+        $arca = new Arca(self::$configuration);
+        $invoice = $this->invoice(2000);
+        $class = $arca->preview($invoice)->class;
+        $next = $arca->lastNumber(self::$salesPoint, $class) + 1;
+
+        $result = $arca->retryIssue($invoice, unconfirmedNumber: $next);
+        self::assertSame($next, $result->number);
+        self::assertMatchesRegularExpression('/^[0-9]{14}$/', $result->authorization->cae);
+        self::assertSame($next, $arca->lastNumber(self::$salesPoint, $class));
+    }
+
+    /** Another voucher holds the unconfirmed number: the earlier attempt never landed, so it is issued as new. */
+    public function testRetryOfANumberHeldByAnotherVoucherIssuesANewOne(): void
+    {
+        $arca = new Arca(self::$configuration);
+        $other = $arca->issue($this->invoice(3000));
+        $invoice = $this->invoice(4000);
+
+        $result = $arca->retryIssue($invoice, unconfirmedNumber: $other->number);
+        self::assertGreaterThan($other->number, $result->number);
+        self::assertNotSame($other->authorization->cae, $result->authorization->cae);
+        self::assertEquals($arca->preview($invoice), $result->totals);
+    }
+
     /** Passing the number as an earlier attempt must find the voucher in ARCA instead of issuing another. */
     private static function assertFoundAgain(Arca $arca, Invoice $invoice, IssueResult $result): void
     {
-        $again = $arca->issue($invoice, previousNumber: $result->number);
+        $again = $arca->retryIssue($invoice, unconfirmedNumber: $result->number);
         self::assertSame($result->number, $again->number);
         self::assertEquals($result->authorization, $again->authorization);
         self::assertSame($result->qr, $again->qr);

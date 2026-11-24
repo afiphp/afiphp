@@ -13,7 +13,9 @@ intento y vos lo guardás con la factura.
 use Afiphp\Exceptions\{ArcaUnavailable, ConfigurationError, InvoiceRejected, LockTimeout, UnconfirmedIssue};
 
 try {
-    $result = $arca->issue($invoice, previousNumber: $venta->numeroSinConfirmar);
+    $result = $venta->numeroSinConfirmar === null
+        ? $arca->issue($invoice)
+        : $arca->retryIssue($invoice, $venta->numeroSinConfirmar);
     // Autorizada: guardá número, CAE y fecha, y borrá el número sin confirmar.
 } catch (InvoiceRejected $e) {
     // ARCA la rechazó: $e->observations dice por qué. Corregí y volvé a emitir.
@@ -32,7 +34,7 @@ try {
 |---|---|---|
 | `IssueResult` | Autorizada. | Guardarla. Revisar `observations` igual. |
 | `InvoiceRejected` | ARCA la rechazó; no existe. | Corregir según `observations` y emitir de nuevo. |
-| `UnconfirmedIssue` | Se perdió la respuesta y la consulta no la confirmó. | Guardar `$e->number` y pasarlo como `previousNumber` en el próximo intento. |
+| `UnconfirmedIssue` | La autorización sigue sin confirmarse. | Guardar `$e->number` y pasarlo a `retryIssue()`. |
 | `ArcaUnavailable` | ARCA no respondió y el pedido no salió, o no pudo procesarlo. | Repetir más tarde. |
 | `ConfigurationError` | ARCA no acepta el pedido por la configuración del emisor. | Avisar a un administrador. |
 | `LockTimeout` | Otro worker retuvo el bloqueo del punto de venta, o el del login, más de lo permitido. No se envió nada. | Repetir. |
@@ -53,27 +55,29 @@ no hay nada que consultar: lanza `ArcaUnavailable` o `ConfigurationError`.
 
 ## Próximo intento
 
-Pasá el número guardado como `previousNumber`. Antes de enviar, `issue()` lo
-busca en ARCA:
+Pasá el número guardado a `retryIssue($invoice, $numeroGuardado)`. Dentro del
+bloqueo del punto de venta, lee una sola vez el último número autorizado y lo
+compara con el número guardado. Por ejemplo, si guardaste el 50:
 
-| ARCA tiene en ese número | `issue()` |
+| Último autorizado | Qué hace `retryIssue()` |
 |---|---|
-| Esta factura | La devuelve autorizada, con la fecha con que se autorizó. No envía nada. |
-| Nada | La envía con ese mismo número y la fecha de la factura. |
-| Otro comprobante | El intento anterior no llegó: la emite con el próximo número. |
-| No se puede consultar | Lanza la falla y no envía nada. |
+| 50 o más | Consulta el 50. Si es la misma factura, devuelve su CAE y su fecha. Si es otro comprobante, emite con el siguiente número de la secuencia que leyó. |
+| 49 | Envía con el 50. Ante un rechazo, consulta el 50. Si encuentra la misma factura, devuelve su CAE. Si está libre o contiene otro comprobante, propaga el rechazo. |
+| 48 o menos | Lanza `InvalidArgumentException` sin enviar una solicitud de autorización. |
 
-Reenviar el mismo número nunca duplica: ARCA solo acepta el número siguiente al
-último autorizado. Si rechaza el reenvío, `issue()` vuelve a consultar, por si
-el intento anterior llegó tarde.
+Si no se puede comprobar qué pasó, por ejemplo porque se pierde también la
+respuesta del reintento, `retryIssue()` lanza `UnconfirmedIssue` con el número
+que corresponde guardar.
 
-La factura se compara por tipo, punto de venta, receptor, importes y alícuotas,
-**sin la fecha**: el próximo intento puede ser otro día. Por eso:
+Si el último autorizado es 50 o más pero ARCA no encuentra el 50, ARCA se
+contradice y reintentar no lo resuelve: `retryIssue()` lanza
+`RuntimeException` sin enviar nada. Conciliá ese número a mano con ARCA.
 
-- **No cambies la factura** mientras tenga un número sin confirmar, salvo la
-  fecha.
-- **No emitas sin `previousNumber`** una factura que tiene un número sin
-  confirmar: podrías duplicarla.
+`retryIssue()` compara los datos fiscales sin la fecha del comprobante, porque
+el reintento puede hacerse otro día. Conservá los datos originales, pero poné
+una fecha que ARCA acepte, por ejemplo la de hoy: si reenvía con una fecha
+vieja, ARCA la rechaza. Usá `retryIssue()` para una factura sin confirmar:
+llamar a `issue()` podría emitirla otra vez con un número nuevo.
 
 ## Antes de emitir
 
@@ -94,13 +98,13 @@ número sin confirmar del anterior.
 ## Emisiones simultáneas
 
 Las emisiones en un mismo punto de venta se hacen de a una: desde que se lee el
-último número hasta que ARCA responde, `issue()` retiene un bloqueo del
-[almacenamiento](almacenamiento.md). Otro worker que emite en ese punto de
-venta espera; uno que emite en otro punto de venta, no.
+último número hasta que termina la operación, `issue()` y `retryIssue()`
+retienen un bloqueo del [almacenamiento](almacenamiento.md). Otro worker que
+emite en ese punto de venta espera; uno que emite en otro punto de venta, no.
 
 - El bloqueo alcanza a los procesos que comparten el almacenamiento. Otro
   sistema que emite en el mismo punto de venta no lo ve: dale a la aplicación
   un punto de venta propio.
 - Si no se obtiene en `NetworkOptions::$salesPointLockTimeout` segundos (120
-  por defecto), `issue()` lanza `LockTimeout` sin haber enviado nada:
+  por defecto), la llamada lanza `LockTimeout` sin haber enviado nada:
   repetí la llamada.

@@ -157,7 +157,7 @@ final class QueriesTest extends TestCase
             self::fail('Expected an unconfirmed issue.');
         } catch (UnconfirmedIssue) {
             self::assertSame(
-                ['ARCA did not confirm voucher 51; keep it as previousNumber'],
+                ['ARCA did not confirm voucher 51; keep it for retryIssue()'],
                 $this->logger->messages('error'),
             );
         }
