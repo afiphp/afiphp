@@ -63,7 +63,7 @@ Tres reglas:
 
 1. **Guardá la factura y su ID (`venta:123`) antes de emitir.** Repetir
    `issue()` con el mismo ID y los mismos datos devuelve el resultado guardado,
-   sin emitir de nuevo.
+   sin emitir de nuevo. Si ARCA la rechazó, corregila y emitila con el mismo ID.
 2. **Un timeout o una excepción no autorizan a emitir con otro ID.** Tratá cada
    [estado del resultado](docs/conciliacion.md#qué-hacer-con-cada-estado).
 3. **El almacenamiento no es caché.** No lo borres ni lo restaures para

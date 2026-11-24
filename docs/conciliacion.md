@@ -14,9 +14,9 @@ y un ambiente.
 | `Outcome` | Significa | Qué hacer |
 |---|---|---|
 | `AUTHORIZED` | Autorizada con CAE válido. | Guardar el resultado. No volver a emitir. |
-| `REJECTED` | ARCA la rechazó. | Revisar `observations`. Si corregís, usá un ID nuevo. |
+| `REJECTED` | ARCA la rechazó. | Revisar `observations`, corregir y emitir con el mismo ID. |
 | `INDETERMINATE` | No se sabe si se autorizó. **Bloquea la serie.** | Llamar `recover()`; si sigue igual, evaluar `retry()`. |
-| `CONFLICT` | El número reservado tiene otro comprobante en ARCA. No bloquea. | Revisar ese comprobante a mano antes de facturar la venta con un ID nuevo. |
+| `CONFLICT` | El número reservado tiene otro comprobante en ARCA. No bloquea. | Revisar ese comprobante a mano antes de volver a emitir la venta con el mismo ID. |
 | `BLOCKED` | Otra operación pendiente (`blockedBy`) bloquea la serie. No se envió nada. | Resolver esa operación y volver a intentar. |
 
 Ante `INDETERMINATE` o `BLOCKED`, **nunca** cambies el ID, la fecha ni borres el
@@ -31,7 +31,10 @@ hasta 200 bytes, sin espacios en los extremos ni secretos.
 Si repetís un ID:
 
 - **con los mismos datos**, devuelve el resultado guardado sin contactar ARCA;
-- **con otros datos**, lanza `IdempotencyConflict` sin enviar nada.
+- **con otros datos**, lanza `IdempotencyConflict` sin enviar nada, salvo que
+  el intento anterior haya terminado `REJECTED` o `CONFLICT`. En ese caso no
+  quedó nada tuyo en ARCA y emite los datos nuevos con el mismo ID; el intento
+  anterior queda en el registro.
 
 La fecha y la cotización son parte de los datos. Para reintentar, reusá la
 factura guardada; no la reconstruyas con la fecha o cotización de hoy.
@@ -91,7 +94,8 @@ try {
 } catch (ServiceUnavailable $e) {
     // ARCA no responde o tiene un error interno. Avisá y repetí la misma llamada más tarde.
 } catch (IdempotencyConflict $e) {
-    // El ID ya existe con otros datos. Recuperá los originales.
+    // El ID ya existe con otros datos y está autorizado o pendiente.
+    // recover($operation) devuelve lo guardado o concilia el pendiente.
 } catch (IssuancePersistenceException $e) {
     // Hubo resultado ($e->result) pero no se pudo guardar.
     // Arreglá el almacenamiento y llamá recover($operation).

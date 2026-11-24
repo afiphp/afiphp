@@ -100,6 +100,7 @@ Una factura no admite `original` ni `period`; una nota requiere uno de los dos.
 | `Receiver::finalConsumerWithDni(string $dni)` | DNI |
 | `Receiver::finalConsumerWithCuil(string $cuil)` | CUIL |
 | `Receiver::finalConsumerWithCuit(string $cuit)` | CUIT |
+| `Receiver::fromArcaDocument(int $documentType, string $number, VatCondition $vatCondition)` | Código ARCA: 80 (CUIT), 86 (CUIL) o 96 (DNI). Si no es consumidor final, exige CUIT. |
 
 Expone `document`, `documentType` (`DocumentType`) y `vatCondition`.
 
@@ -148,6 +149,23 @@ Expone `amount`, `vat` (`?VatRate`) e `includesVat`.
 `invoiceReference()` devuelve la referencia para asociar una nota; lanza
 `LogicException` si no está autorizado.
 
+### QrCode
+
+Para imprimir más tarde un comprobante ya autorizado, sin el `IssueResult`:
+
+```php
+use Afiphp\Billing\QrCode;
+
+$url = QrCode::url(
+    issuerCuit: '20111111112',
+    voucher: new InvoiceReference(InvoiceClass::B, 2, 50, $fecha),
+    total: 18150, // Centavos.
+    cae: '71372966559657',
+    receiver: null, // Opcional: omitilo si los datos del cliente pudieron cambiar.
+    currency: null, // Pesos.
+);
+```
+
 ### Authorization
 
 | Campo | Tipo |
@@ -193,6 +211,11 @@ Campos: `cuit`, `name`, `personType`, `vatCondition` (`?VatCondition`),
 | `OtherTaxType` | `NATIONAL`, `PROVINCIAL`, `MUNICIPAL`, `INTERNAL`, `GROSS_INCOME`, `VAT_PERCEPTION`, `GROSS_INCOME_PERCEPTION`, `MUNICIPAL_PERCEPTION`, `OTHER_PERCEPTION`, `OTHER` |
 | `Outcome` | `AUTHORIZED`, `REJECTED`, `INDETERMINATE`, `CONFLICT`, `BLOCKED` |
 
+Si tu sistema guarda los códigos de ARCA, convertilos con
+`VatCondition::fromArcaCode(int $code)` (`CondicionIVAReceptorId`) y
+`VatRate::fromArcaCode(int $code)` (`Id` de la alícuota). Un código desconocido
+lanza `InvalidArgumentException`. Exento y no gravado no tienen código.
+
 ## Excepciones
 
 Las propias están en `Afiphp\Exceptions`.
@@ -200,7 +223,7 @@ Las propias están en `Afiphp\Exceptions`.
 | Excepción | Indica |
 |---|---|
 | `InvalidArgumentException` | Datos inválidos, fecha fuera de ventana, PEM incorrecto u operación desconocida. |
-| `IdempotencyConflict` | El ID ya existe con otros datos. |
+| `IdempotencyConflict` | El ID ya existe con otros datos y no fue rechazado. |
 | `IssuancePersistenceException` | Hubo resultado (`result`) pero no se pudo guardar. |
 | `SoapException` | Fallo de transporte. `getFaultCode()`, `getPrevious()`. |
 | `ConnectionException` | `SoapException` sin respuesta de ARCA: sin conexión, timeout o página de error HTTP. |

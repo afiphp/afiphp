@@ -16,7 +16,7 @@ final class QrCode
     {
         $header = $record['request']['FeCAEReq']['FeCabReq'];
         $detail = $record['request']['FeCAEReq']['FeDetReq']['FECAEDetRequest'][0];
-        $fields = [
+        return self::encode([
             'ver' => '1',
             'fecha' => json_encode($record['date'], JSON_THROW_ON_ERROR),
             'cuit' => self::integer($record['issuerCuit']),
@@ -30,7 +30,15 @@ final class QrCode
             'nroDocRec' => self::integer($detail['DocNro']),
             'tipoCodAut' => '"E"',
             'codAut' => self::integer($cae),
-        ];
+        ]);
+    }
+
+    /**
+     * Fields hold JSON tokens, written in RG 4892 order.
+     * @param array<string, string> $fields
+     */
+    public static function encode(array $fields): string
+    {
         $json =
             '{'
             . implode(',', array_map(
@@ -44,7 +52,7 @@ final class QrCode
     }
 
     /** A JSON integer token without leading zeros. */
-    private static function integer(int|string $value): string
+    public static function integer(int|string $value): string
     {
         return ltrim((string) $value, '0') ?: '0';
     }

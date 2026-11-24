@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Afiphp\Billing;
 
+use Afiphp\Internal\Billing\InvoiceMapper;
 use InvalidArgumentException;
 
 final readonly class Receiver
@@ -45,6 +46,32 @@ final readonly class Receiver
         self::validateDni($dni);
 
         return new self(VatCondition::CONSUMIDOR_FINAL, $dni, DocumentType::DNI);
+    }
+
+    /**
+     * A receiver from ARCA's document type code (80 CUIT, 86 CUIL, 96 DNI), as stored by most systems.
+     * Anyone but a final consumer is identified by CUIT. Separators in the number are not removed.
+     */
+    public static function fromArcaDocument(int $documentType, string $number, VatCondition $vatCondition): self
+    {
+        $type = null;
+        foreach (DocumentType::cases() as $case) {
+            if (InvoiceMapper::documentType($case) === $documentType) {
+                $type = $case;
+            }
+        }
+
+        return match (true) {
+            $type === null => throw new InvalidArgumentException(
+                "Unsupported ARCA document type {$documentType}: use 80 (CUIT), 86 (CUIL) or 96 (DNI).",
+            ),
+            $vatCondition !== VatCondition::CONSUMIDOR_FINAL && $type !== DocumentType::CUIT
+                => throw new InvalidArgumentException('A receiver that is not a final consumer requires a CUIT.'),
+            $vatCondition !== VatCondition::CONSUMIDOR_FINAL => self::business($number, $vatCondition),
+            $type === DocumentType::CUIT => self::finalConsumerWithCuit($number),
+            $type === DocumentType::CUIL => self::finalConsumerWithCuil($number),
+            default => self::finalConsumerWithDni($number),
+        };
     }
 
     public static function validateDni(string $dni): void

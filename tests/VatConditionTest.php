@@ -6,6 +6,7 @@ namespace Tests;
 
 use Afiphp\Billing\VatCondition;
 use Afiphp\Internal\Billing\InvoiceMapper;
+use InvalidArgumentException;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
@@ -34,6 +35,13 @@ final class VatConditionTest extends TestCase
     public function testFiscalCodesDoNotChangeWithPublicNames(VatCondition $condition, int $code): void
     {
         self::assertSame($code, InvoiceMapper::condition($condition));
+        self::assertSame($condition, VatCondition::fromArcaCode($code));
+    }
+
+    public function testUnknownArcaCodeIsNotGuessed(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        VatCondition::fromArcaCode(2);
     }
 
     public static function fiscalConditions(): array

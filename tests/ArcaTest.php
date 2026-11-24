@@ -13,6 +13,7 @@ use Afiphp\Billing\Item;
 use Afiphp\Billing\OtherTax;
 use Afiphp\Billing\OtherTaxType;
 use Afiphp\Billing\Outcome;
+use Afiphp\Billing\QrCode;
 use Afiphp\Billing\Receiver;
 use Afiphp\Billing\VatCondition;
 use Afiphp\Billing\VatRate;
@@ -127,6 +128,37 @@ final class ArcaTest extends TestCase
         );
     }
 
+    public function testQrOfAnEarlierVoucherMatchesTheIssuedOne(): void
+    {
+        $receiver = Receiver::finalConsumerWithDni('30111222');
+        $currency = Currency::dollars('1455.50', paidInDollars: false);
+        $result = $this->client(new FakeFiscalGateway())->issue(
+            new Invoice(
+                2,
+                $receiver,
+                [Item::netAmount(15000, VatRate::STANDARD_21)],
+                new DateTimeImmutable('today', new DateTimeZone('America/Argentina/Buenos_Aires')),
+                currency: $currency,
+            ),
+            'sale:qr',
+        );
+        $voucher = $result->invoiceReference();
+        $cae = $result->authorization->cae;
+        self::assertSame(
+            $result->qr,
+            QrCode::url('20111111112', $voucher, $result->totals->total, $cae, $receiver, $currency),
+        );
+        $withoutReceiver = QrCode::url('20111111112', $voucher, 18150, $cae);
+        self::assertSame(
+            '{"ver":1,"fecha":"'
+            . $voucher->date->format('Y-m-d')
+            . '","cuit":20111111112,"ptoVta":2,'
+            . '"tipoCmp":6,"nroCmp":50,"importe":181.50,"moneda":"PES","ctz":1,'
+            . '"tipoCodAut":"E","codAut":71372966559657}',
+            base64_decode(substr($withoutReceiver, strlen('https://www.arca.gob.ar/fe/qr/?p=')), true),
+        );
+    }
+
     public function testOnlyAuthorizedResultsHaveAQr(): void
     {
         [$client] = $this->pending();
@@ -237,6 +269,44 @@ final class ArcaTest extends TestCase
         $gateway = new FakeFiscalGateway();
         $client = $this->client($gateway);
         $client->issue($this->intent(), 'sale:1');
+        $gateway->calls = [];
+        try {
+            $client->issue($this->intent(15100), 'sale:1');
+            self::fail('Expected idempotency conflict.');
+        } catch (IdempotencyConflict) {
+            self::assertSame([], $gateway->calls);
+        }
+    }
+
+    public function testARejectedOperationCanBeIssuedAgainWithCorrectedData(): void
+    {
+        $gateway = new FakeFiscalGateway();
+        $gateway->onAuthorize = static function (array $request): object {
+            $response = FakeFiscalGateway::approved($request);
+            $response->FeCabResp->Resultado = 'R';
+            $detail = $response->FeDetResp->FECAEDetResponse[0];
+            $detail->Resultado = 'R';
+            $detail->CAE = '';
+            $detail->CAEFchVto = '';
+            return $response;
+        };
+        $client = $this->client($gateway);
+        self::assertSame(Outcome::REJECTED, $client->issue($this->intent(), 'sale:1')->outcome);
+        $gateway->onAuthorize = null;
+        $gateway->calls = [];
+        self::assertSame(Outcome::REJECTED, $client->issue($this->intent(), 'sale:1')->outcome);
+        self::assertSame([], $gateway->calls);
+        $corrected = $client->issue($this->intent(15100), 'sale:1');
+        self::assertSame(Outcome::AUTHORIZED, $corrected->outcome);
+        self::assertSame(['last', 'authorize'], array_column($gateway->calls, 0));
+        self::assertEquals($corrected, $client->issue($this->intent(15100), 'sale:1'));
+        $this->expectException(IdempotencyConflict::class);
+        $client->issue($this->intent(), 'sale:1');
+    }
+
+    public function testAPendingOperationCannotTakeDifferentData(): void
+    {
+        [$client, $gateway] = $this->pending();
         $gateway->calls = [];
         try {
             $client->issue($this->intent(15100), 'sale:1');

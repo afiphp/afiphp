@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Afiphp\Internal\Billing;
 
+use Afiphp\Billing\Currency;
 use Afiphp\Billing\DocumentType;
 use Afiphp\Billing\Invoice;
 use Afiphp\Billing\InvoiceClass;
@@ -142,6 +143,11 @@ final class InvoiceMapper
         };
     }
 
+    public static function currency(Currency $currency): string
+    {
+        return $currency->code === 'ARS' ? 'PES' : 'DOL';
+    }
+
     public static function detail(Invoice $invoice, Preview $totals, string $issuerCuit): array
     {
         $detail = [
@@ -156,7 +162,7 @@ final class InvoiceMapper
             'ImpOpEx' => Amounts::decimal($totals->exempt),
             'ImpIVA' => Amounts::decimal($totals->vat),
             'ImpTrib' => Amounts::decimal($totals->otherTaxes),
-            'MonId' => $invoice->currency->code === 'ARS' ? 'PES' : 'DOL',
+            'MonId' => self::currency($invoice->currency),
             'MonCotiz' => $invoice->currency->exchangeRate,
         ];
         if ($invoice->currency->paidInSameCurrency !== null) {

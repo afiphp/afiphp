@@ -195,6 +195,7 @@ final class BillingTest extends TestCase
                 InvoiceMapper::rate($rate),
                 InvoiceCalculator::basisPoints($rate),
             ];
+            self::assertSame($rate, VatRate::fromArcaCode(InvoiceMapper::rate($rate)));
         }
         self::assertSame(
             [
@@ -216,6 +217,34 @@ final class BillingTest extends TestCase
             ],
             $codes,
         );
+    }
+
+    #[DataProvider('arcaDocuments')]
+    public function testReceiverFromArcaDocumentCodes(
+        int $type,
+        string $number,
+        VatCondition $condition,
+        ?Receiver $expected,
+    ): void {
+        if ($expected === null) {
+            $this->expectException(InvalidArgumentException::class);
+        }
+        self::assertEquals($expected, Receiver::fromArcaDocument($type, $number, $condition));
+    }
+
+    public static function arcaDocuments(): array
+    {
+        $final = VatCondition::CONSUMIDOR_FINAL;
+        $registered = VatCondition::RESPONSABLE_INSCRIPTO;
+
+        return [
+            'business' => [80, '20111111112', $registered, Receiver::business('20111111112', $registered)],
+            'final with CUIT' => [80, '20111111112', $final, Receiver::finalConsumerWithCuit('20111111112')],
+            'final with CUIL' => [86, '20111111112', $final, Receiver::finalConsumerWithCuil('20111111112')],
+            'final with DNI' => [96, '30111222', $final, Receiver::finalConsumerWithDni('30111222')],
+            'business without CUIT' => [96, '30111222', $registered, null],
+            'unidentified final consumer' => [99, '0', $final, null],
+        ];
     }
 
     public function testTaxTypeCodesMatchTheArcaCatalog(): void

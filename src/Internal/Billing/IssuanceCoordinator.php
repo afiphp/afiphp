@@ -172,11 +172,17 @@ final class IssuanceCoordinator
     {
         $key = hash('sha256', $record['operation']);
         if (isset($records[$key])) {
-            if ($records[$key]['fingerprint'] !== $record['fingerprint']) {
+            $previous = $records[$key];
+            if ($previous['fingerprint'] === $record['fingerprint']) {
+                // Replays never submit and never implicitly perform recovery.
+                return self::result($previous);
+            }
+            // Only a final outcome that left nothing of ours at ARCA lets the operation carry corrected data.
+            if (!in_array($previous['status'], ['rejected', 'conflict'], true)) {
                 throw new IdempotencyConflict('This operation already has different fiscal data. Nothing was sent.');
             }
-            // Replays never submit and never implicitly perform recovery.
-            return self::result($records[$key]);
+            unset($previous['superseded']);
+            $record['superseded'] = [...($records[$key]['superseded'] ?? []), $previous];
         }
         self::validateDate(self::detailOf($record));
         $series = array_filter(
