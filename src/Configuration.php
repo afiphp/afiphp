@@ -19,12 +19,16 @@ final readonly class Configuration
         public Credentials $credentials,
         public Storage $storage,
         public Environment $environment = Environment::HOMOLOGATION,
-        public NetworkOptions $network = new NetworkOptions(),
+        /** Seconds to wait for each ARCA response. A short wait leaves more issuances unconfirmed. */
+        public int $timeout = 60,
         /** Receives ARCA calls (debug), logins and issuances (info) and problems (warning, error). Never secrets. */
         public LoggerInterface $logger = new NullLogger(),
     ) {
         if (PHP_INT_SIZE < 8) {
             throw new InvalidArgumentException('Exact fiscal arithmetic requires 64-bit PHP.');
+        }
+        if ($timeout < 1) {
+            throw new InvalidArgumentException('The timeout must be a positive number of seconds.');
         }
         Receiver::validateCuit($cuit);
         if ($vatCondition === VatCondition::CONSUMIDOR_FINAL) {

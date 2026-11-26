@@ -25,7 +25,6 @@ Usá un directorio privado, persistente y fuera del webroot. Adentro:
 |---|---|
 | `tickets/` | Sesiones de autenticación, cifradas. |
 | `locks/` | Bloqueos de emisión por punto de venta. Vacíos. |
-| `diagnostics/` | SOAP redactado, si `saveSoapMessages` está activo. Puede tener datos personales. |
 
 - Crea directorios `0700` y archivos `0600`. Rechaza directorios con permisos
   de grupo u otros, sin corregirlos.
@@ -44,10 +43,9 @@ Implementá `Afiphp\Storage\Storage` y pasalo como `storage:` en `Configuration`
 | `writeTicket(string $key, string $ticket): void` | Guardarlo de forma atómica y privada. |
 | `withTicketLock(string $key, int $timeout, callable $callback): mixed` | Excluir otros logins durante todo el callback. Lanzar `LockTimeout` si no lo obtiene en `$timeout` segundos. |
 | `withSalesPointLock(string $key, int $timeout, callable $callback): mixed` | Excluir otras emisiones con la misma clave durante todo el callback, que espera la respuesta de ARCA. Lanzar `LockTimeout` si no lo obtiene en `$timeout` segundos. |
-| `writeDiagnostic(string $key, string $xml): void` | Guardar el XML redactado, o no hacer nada. |
 
 Los bloqueos no pueden vencer mientras el callback corre: un bloqueo con
 vencimiento (un *lease* de Redis, por ejemplo) tiene que durar más que una
-emisión completa, que puede sumar varias veces `connectionTimeout` +
-`readTimeout`. Las claves de los dos bloqueos pueden coincidir: no deben
+emisión completa, que puede sumar varias veces el `timeout` de
+`Configuration`. Las claves de los dos bloqueos pueden coincidir: no deben
 excluirse entre sí.

@@ -7,7 +7,6 @@ namespace Tests;
 use Afiphp\Credentials as SigningCredentials;
 use Afiphp\Environment;
 use Afiphp\Internal\WebServices\WsAa;
-use Afiphp\NetworkOptions;
 use Afiphp\Storage\FileStorage;
 use DateTimeImmutable;
 use InvalidArgumentException;
@@ -58,13 +57,9 @@ final class WsAaTest extends TestCase
     private function service(
         FakeTransport $transport,
         Environment $environment = Environment::HOMOLOGATION,
-        ?NetworkOptions $options = null,
         string $cuit = '20111111112',
     ): WsAa {
-        return new class(
-            $this->configuration($cuit, $environment, $options ?? new NetworkOptions()),
-            $transport,
-        ) extends WsAa {
+        return new class($this->configuration($cuit, $environment), $transport) extends WsAa {
             protected function sign(string $loginRequest): string
             {
                 return 'test-cms';
@@ -167,7 +162,7 @@ final class WsAaTest extends TestCase
     {
         $transport = new FakeTransport(fn () => (object) ['loginCmsReturn' => $this->ticket()]);
         $this->service($transport)->ticket('wsfe');
-        $this->service($transport, Environment::HOMOLOGATION, null, '20222222223')->ticket('wsfe');
+        $this->service($transport, Environment::HOMOLOGATION, '20222222223')->ticket('wsfe');
         self::assertCount(1, $transport->calls);
     }
 

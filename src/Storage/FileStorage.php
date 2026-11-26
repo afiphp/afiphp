@@ -58,12 +58,6 @@ final class FileStorage implements Storage
         );
     }
 
-    public function writeDiagnostic(string $key, string $xml): void
-    {
-        PrivateFiles::ensurePrivateDirectory($this->directory . '/diagnostics');
-        PrivateFiles::write($this->directory . '/diagnostics/' . hash('sha256', $key) . '.xml', $xml);
-    }
-
     private function ticketPath(string $key): string
     {
         return $this->directory . '/tickets/' . hash('sha256', $key) . '.xml';

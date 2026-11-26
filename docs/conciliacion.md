@@ -128,6 +128,5 @@ emite en ese punto de venta espera; uno que emite en otro punto de venta, no.
 - El bloqueo alcanza a los procesos que comparten el almacenamiento. Otro
   sistema que emite en el mismo punto de venta no lo ve: dale a la aplicación
   un punto de venta propio.
-- Si no se obtiene en `NetworkOptions::$salesPointLockTimeout` segundos (120
-  por defecto), la llamada lanza `LockTimeout` sin haber enviado nada:
+- Si no se obtiene en 120 segundos, la llamada lanza `LockTimeout` sin haber enviado nada:
   repetí la llamada.

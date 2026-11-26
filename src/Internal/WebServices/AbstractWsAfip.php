@@ -9,12 +9,11 @@ use Afiphp\Exceptions\InvalidResponseException;
 use Afiphp\Exceptions\WsException;
 use Afiphp\Internal\WebServices\Contracts\SoapTransport;
 use InvalidArgumentException;
-use SimpleXMLElement;
 use SoapFault;
 use Throwable;
 use UnexpectedValueException;
 
-/** @internal SOAP call, ARCA error mapping and redacted diagnostics. Never retries a call. */
+/** @internal SOAP call and ARCA error mapping. Never retries a call. */
 abstract class AbstractWsAfip
 {
     protected const WSFE = 'wsfe';
@@ -47,7 +46,8 @@ abstract class AbstractWsAfip
             __DIR__ . "/Wsdl/{$this->service()}-{$configuration->environment->value}.xml",
             self::URLS[$configuration->environment->value][$this->service()],
             $this->service() !== self::WSFE,
-            $configuration->network,
+            $configuration->timeout,
+            legacyTls: $this->service() === self::WSFE,
         );
     }
 
@@ -75,11 +75,6 @@ abstract class AbstractWsAfip
                 'outcome' => $outcome,
                 'milliseconds' => intdiv(hrtime(true) - $started, 1_000_000),
             ]);
-            // Optional diagnostics must never mask the fiscal result or the transport exception.
-            try {
-                $this->saveRequestAndResponse($method);
-            } catch (Throwable) {
-            }
         }
         if ($response instanceof SoapFault) {
             throw Failures::fromFault($response);
@@ -112,50 +107,5 @@ abstract class AbstractWsAfip
         }
 
         return $result->ResultGet;
-    }
-
-    private function saveRequestAndResponse(string $method): void
-    {
-        if (!$this->configuration->network->saveSoapMessages) {
-            return;
-        }
-        $suffix = bin2hex(random_bytes(8));
-        $prefix = "{$this->configuration->cuit}-{$this->configuration->environment->value}-{$this->service()}";
-        $messages = [
-            'request' => $this->transport->getLastRequest(),
-            'response' => $this->transport->getLastResponse(),
-        ];
-        foreach ($messages as $type => $xml) {
-            $redacted = $xml === null || $xml === '' ? null : self::redact($xml);
-            if ($redacted !== null) {
-                $this->configuration->storage->writeDiagnostic("{$prefix}-{$method}-{$type}-{$suffix}.xml", $redacted);
-            }
-        }
-    }
-
-    /** Never persist credentials, CMS signatures or embedded WSAA tickets. */
-    private static function redact(string $xml): ?string
-    {
-        if (stripos($xml, '<!DOCTYPE') !== false) {
-            return null;
-        }
-        $previous = libxml_use_internal_errors(true);
-        try {
-            $document = simplexml_load_string($xml, SimpleXMLElement::class, LIBXML_NONET);
-            if ($document === false) {
-                return null;
-            }
-            $secrets =
-                '//*[local-name()="Token" or local-name()="Sign" or local-name()="token" '
-                . 'or local-name()="sign" or local-name()="in0" or local-name()="loginCmsReturn"]';
-            foreach ($document->xpath($secrets) ?: [] as $node) {
-                $node[0] = '[REDACTED]';
-            }
-
-            return $document->asXML() ?: null;
-        } finally {
-            libxml_clear_errors();
-            libxml_use_internal_errors($previous);
-        }
     }
 }

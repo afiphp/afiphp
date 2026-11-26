@@ -6,19 +6,22 @@ namespace Afiphp\Internal\WebServices;
 
 use Afiphp\Exceptions\InvalidResponseException;
 use Afiphp\Internal\WebServices\Contracts\SoapTransport;
-use Afiphp\NetworkOptions;
 use SoapClient;
 use SoapFault;
 
 /** @internal */
 final class NativeSoapTransport implements SoapTransport
 {
+    private const CONNECTION_TIMEOUT = 10;
+
     public function __construct(
         private string $wsdl,
         private string $url,
         private bool $soap11,
-        private NetworkOptions $options,
+        private int $timeout,
         private ?SoapClient $client = null,
+        // ARCA's production WSFE still negotiates DH parameters that OpenSSL 3.x rejects at SECLEVEL 2.
+        private bool $legacyTls = false,
     ) {}
 
     private function client(): SoapClient
@@ -27,9 +30,8 @@ final class NativeSoapTransport implements SoapTransport
             $this->client = new SoapClient($this->wsdl, [
                 'soap_version' => $this->soap11 ? SOAP_1_1 : SOAP_1_2,
                 'location' => $this->url,
-                'trace' => $this->options->saveSoapMessages,
                 'exceptions' => true,
-                'connection_timeout' => $this->options->connectionTimeout,
+                'connection_timeout' => min(self::CONNECTION_TIMEOUT, $this->timeout),
                 'features' => SOAP_SINGLE_ELEMENT_ARRAYS,
                 'typemap' => self::decimalTypeMap(),
                 'stream_context' => stream_context_create([
@@ -37,8 +39,8 @@ final class NativeSoapTransport implements SoapTransport
                         'verify_peer' => true,
                         'verify_peer_name' => true,
                         'allow_self_signed' => false,
-                        // Opt-in for ARCA endpoints with legacy DH parameters; keep CA/hostname checks.
-                        'ciphers' => $this->options->allowLegacyTls ? 'DEFAULT@SECLEVEL=1' : 'DEFAULT',
+                        // SECLEVEL=1 only relaxes DH/RSA size checks; CA and hostname checks stay on.
+                        'ciphers' => $this->legacyTls ? 'DEFAULT@SECLEVEL=1' : 'DEFAULT',
                     ],
                 ]),
             ]);
@@ -61,7 +63,7 @@ final class NativeSoapTransport implements SoapTransport
             return true;
         });
         try {
-            if (ini_set('default_socket_timeout', (string) $this->options->readTimeout) === false) {
+            if (ini_set('default_socket_timeout', (string) $this->timeout) === false) {
                 throw new \RuntimeException('Unable to configure the SOAP read timeout.');
             }
             $response = $this->client()->__soapCall($method, [$params]);
@@ -118,15 +120,5 @@ final class NativeSoapTransport implements SoapTransport
                 }
             },
         ]];
-    }
-
-    public function getLastRequest(): ?string
-    {
-        return $this->client?->__getLastRequest();
-    }
-
-    public function getLastResponse(): ?string
-    {
-        return $this->client?->__getLastResponse();
     }
 }

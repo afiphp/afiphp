@@ -6,7 +6,6 @@ namespace Tests;
 
 use Afiphp\Exceptions\ArcaUnavailable;
 use Afiphp\Internal\WebServices\NativeSoapTransport;
-use Afiphp\NetworkOptions;
 
 final class NativeSoapTimeoutTest extends TestCase
 {
@@ -40,7 +39,7 @@ final class NativeSoapTimeoutTest extends TestCase
                 dirname(__DIR__) . '/src/Internal/WebServices/Wsdl/wsfe-homologation.xml',
                 "http://{$address}/",
                 false,
-                new NetworkOptions(connectionTimeout: 5, readTimeout: 1),
+                1,
             );
             $started = microtime(true);
             try {

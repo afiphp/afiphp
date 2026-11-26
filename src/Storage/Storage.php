@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace Afiphp\Storage;
 
 /**
- * Persistent storage for authentication tickets, issuance locks and optional diagnostics, shared by
- * every worker of an issuer. No expiring leases: each exclusive lock must survive for the whole callback.
+ * Persistent storage for authentication tickets and issuance locks, shared by every worker of an issuer.
+ * No expiring leases: each exclusive lock must survive for the whole callback.
  */
 interface Storage
 {
@@ -30,7 +30,4 @@ interface Storage
      * @return T
      */
     public function withSalesPointLock(string $key, int $timeout, callable $callback): mixed;
-
-    /** Optional, redacted SOAP diagnostics. Never a source of fiscal truth. */
-    public function writeDiagnostic(string $key, string $xml): void;
 }

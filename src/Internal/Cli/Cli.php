@@ -330,7 +330,7 @@ final class Cli
             ],
             str_contains($message, 'TLS') => [
                 'Falló la conexión segura con ARCA.',
-                'Revisá los certificados raíz del sistema; como último recurso, NetworkOptions(allowLegacyTls: true).',
+                'Revisá los certificados raíz del sistema.',
             ],
             default => ['ARCA rechazó la configuración: ' . $message, null],
         };

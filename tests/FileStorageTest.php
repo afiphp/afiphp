@@ -45,16 +45,14 @@ final class FileStorageTest extends TestCase
         self::assertSame([], glob($this->directory . '/storage/*/*'));
     }
 
-    public function testTicketAndDiagnosticWithTheSameKeyNeverOverwriteEachOther(): void
+    public function testTicketsArePrivateAndKeysCannotEscapeTheDirectory(): void
     {
         $storage = $this->storage();
         $storage->withTicketLock('shared-key', 1, static function () use ($storage): void {
             $storage->writeTicket('shared-key', '<ticket>session</ticket>');
         });
-        $storage->writeDiagnostic('shared-key', '<diagnostic/>');
         self::assertSame('<ticket>session</ticket>', $this->storage()->readTicket('shared-key'));
         self::assertCount(1, glob($this->directory . '/storage/tickets/*.xml'));
-        self::assertCount(1, glob($this->directory . '/storage/diagnostics/*.xml'));
         self::assertSame(0600, fileperms(glob($this->directory . '/storage/tickets/*.xml')[0]) & 0777);
         self::assertNull($storage->readTicket('../not-an-existing-key'));
     }

@@ -6,7 +6,6 @@ namespace Tests;
 
 use Afiphp\Exceptions\ConfigurationError;
 use Afiphp\Internal\WebServices\NativeSoapTransport;
-use Afiphp\NetworkOptions;
 use PHPUnit\Framework\Attributes\DataProvider;
 use SoapClient;
 
@@ -28,7 +27,7 @@ final class NativeSoapTransportTest extends TestCase
             . '<CAE>71372966559657</CAE><CAEFchVto>20261124</CAEFchVto>'
             . '</FECAEDetResponse></FeDetResp></FECAESolicitarResult></FECAESolicitarResponse>',
         );
-        $transport = new NativeSoapTransport($wsdl, 'https://unused.test/', false, new NetworkOptions(), $client);
+        $transport = new NativeSoapTransport($wsdl, 'https://unused.test/', false, 60, $client);
         $request = $this->soapDetail();
         foreach (['Iva', 'Tributos', 'Opcionales', 'CbtesAsoc'] as $field) {
             $request[$field] = [$request[$field][0]];
@@ -40,7 +39,7 @@ final class NativeSoapTransportTest extends TestCase
                 'FeDetReq' => ['FECAEDetRequest' => [$request]],
             ],
         ]);
-        $xml = simplexml_load_string($transport->getLastRequest());
+        $xml = simplexml_load_string($client->__getLastRequest());
         foreach (['AlicIva', 'Tributo', 'Opcional', 'CbteAsoc'] as $element) {
             self::assertCount(1, $xml->xpath('//*[local-name()="' . $element . '"]'));
         }
@@ -103,10 +102,10 @@ final class NativeSoapTransportTest extends TestCase
             . '</CondicionIvaReceptor></ResultGet></FEParamGetCondicionIvaReceptorResult>'
             . '</FEParamGetCondicionIvaReceptorResponse>',
         );
-        $transport = new NativeSoapTransport($wsdl, 'https://unused.test/', false, new NetworkOptions(), $client);
+        $transport = new NativeSoapTransport($wsdl, 'https://unused.test/', false, 60, $client);
         $response = $transport->call('FEParamGetCondicionIvaReceptor', ['ClaseCmp' => 'A']);
         self::assertSame(1, $response->FEParamGetCondicionIvaReceptorResult->ResultGet->CondicionIvaReceptor[0]->Id);
-        $xml = simplexml_load_string($transport->getLastRequest());
+        $xml = simplexml_load_string($client->__getLastRequest());
         self::assertSame('A', (string) $xml->xpath('//*[local-name()="ClaseCmp"]')[0]);
     }
 
@@ -119,9 +118,9 @@ final class NativeSoapTransportTest extends TestCase
             . '<loginCmsReturn>&lt;loginTicketResponse/&gt;</loginCmsReturn></loginCmsResponse>',
             SOAP_1_1,
         );
-        $transport = new NativeSoapTransport($wsdl, 'https://unused.test/', true, new NetworkOptions(), $client);
+        $transport = new NativeSoapTransport($wsdl, 'https://unused.test/', true, 60, $client);
         self::assertSame('<loginTicketResponse/>', $transport->call('loginCms', ['in0' => 'signed'])->loginCmsReturn);
-        self::assertStringContainsString('http://schemas.xmlsoap.org/soap/envelope/', $transport->getLastRequest());
+        self::assertStringContainsString('http://schemas.xmlsoap.org/soap/envelope/', $client->__getLastRequest());
     }
 
     #[DataProvider('environments')]
@@ -136,7 +135,7 @@ final class NativeSoapTransportTest extends TestCase
             . '</impuesto></datosRegimenGeneral></personaReturn></ns2:getPersona_v2Response>',
             SOAP_1_1,
         );
-        $transport = new NativeSoapTransport($wsdl, 'https://unused.test/', true, new NetworkOptions(), $client);
+        $transport = new NativeSoapTransport($wsdl, 'https://unused.test/', true, 60, $client);
         $response = $transport->call('getPersona_v2', [
             'token' => 't',
             'sign' => 's',
@@ -145,7 +144,7 @@ final class NativeSoapTransportTest extends TestCase
         ]);
         self::assertSame('ACME SA', $response->personaReturn->datosGenerales->razonSocial);
         self::assertSame(30, $response->personaReturn->datosRegimenGeneral->impuesto[0]->idImpuesto);
-        $xml = simplexml_load_string($transport->getLastRequest());
+        $xml = simplexml_load_string($client->__getLastRequest());
         self::assertSame('30111111118', (string) $xml->xpath('//*[local-name()="idPersona"]')[0]);
         self::assertSame('20111111112', (string) $xml->xpath('//*[local-name()="cuitRepresentada"]')[0]);
     }
@@ -161,7 +160,7 @@ final class NativeSoapTransportTest extends TestCase
             . '</idPersonaListReturn></ns2:getIdPersonaListByDocumentoResponse>',
             SOAP_1_1,
         );
-        $transport = new NativeSoapTransport($wsdl, 'https://unused.test/', true, new NetworkOptions(), $client);
+        $transport = new NativeSoapTransport($wsdl, 'https://unused.test/', true, 60, $client);
         $response = $transport->call('getIdPersonaListByDocumento', [
             'token' => 't',
             'sign' => 's',
@@ -169,7 +168,7 @@ final class NativeSoapTransportTest extends TestCase
             'documento' => '11111111',
         ]);
         self::assertSame([20111111112, 27111111117], $response->idPersonaListReturn->idPersona);
-        $xml = simplexml_load_string($transport->getLastRequest());
+        $xml = simplexml_load_string($client->__getLastRequest());
         self::assertSame('11111111', (string) $xml->xpath('//*[local-name()="documento"]')[0]);
     }
 
@@ -182,7 +181,7 @@ final class NativeSoapTransportTest extends TestCase
             . '<faultstring>Already authenticated</faultstring></soap:Fault>',
             SOAP_1_1,
         );
-        $transport = new NativeSoapTransport($wsdl, 'https://unused.test/', true, new NetworkOptions(), $client);
+        $transport = new NativeSoapTransport($wsdl, 'https://unused.test/', true, 60, $client);
         $this->expectException(ConfigurationError::class);
         $transport->call('loginCms', ['in0' => 'signed']);
     }

@@ -6,7 +6,6 @@ namespace Tests;
 
 use Afiphp\Exceptions\ConfigurationError;
 use Afiphp\Internal\WebServices\NativeSoapTransport;
-use Afiphp\NetworkOptions;
 use PHPUnit\Framework\Attributes\DataProvider;
 use SoapClient;
 
@@ -85,13 +84,7 @@ final class NativeSoapTlsTest extends TestCase
                         'verify_peer_name' => false,
                     ]]),
                 ]) : null;
-            $transport = new NativeSoapTransport(
-                $wsdl,
-                $url,
-                false,
-                new NetworkOptions(connectionTimeout: 3, readTimeout: 3, allowLegacyTls: $mode === 'legacy'),
-                $control,
-            );
+            $transport = new NativeSoapTransport($wsdl, $url, false, 3, $control, $mode === 'legacy');
             if ($control !== null) {
                 self::assertSame('OK', $transport->call('FEDummy', [])->FEDummyResult->AppServer);
             } else {

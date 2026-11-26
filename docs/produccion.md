@@ -38,8 +38,6 @@ de lo que habilitaste en WSASS sirve en producción.
 - `vatCondition` es la condición del emisor **hoy**. Si cambia (por ejemplo,
   de monotributo a responsable inscripto), actualizala: de ella sale la clase
   A, B o C.
-- `saveSoapMessages` en `false`, salvo para diagnosticar algo puntual: los
-  mensajes guardados tienen datos de clientes.
 - Pasá un logger PSR-3 (ver [logs](configuracion.md#logs)).
 
 ## 3. Un almacenamiento compartido

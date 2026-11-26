@@ -26,6 +26,9 @@ use Throwable;
 /** @internal Serializes emission and reconciliation for each sales point. */
 final class Issuance
 {
+    /** Seconds an issuance waits for another one on the same sales point to finish. */
+    private const SALES_POINT_LOCK_TIMEOUT = 120;
+
     public function __construct(
         private Configuration $configuration,
         private FiscalGateway $gateway,
@@ -71,7 +74,7 @@ final class Issuance
         try {
             $result = $configuration->storage->withSalesPointLock(
                 $key,
-                $configuration->network->salesPointLockTimeout,
+                self::SALES_POINT_LOCK_TIMEOUT,
                 fn (): IssueResult => $operation($totals, $type),
             );
         } catch (InvoiceRejected $exception) {

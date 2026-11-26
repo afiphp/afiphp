@@ -16,6 +16,8 @@ use SimpleXMLElement;
 class WsAa extends AbstractWsAfip implements TicketProvider
 {
     private const CIPHER = 'aes-256-gcm';
+    /** Seconds another worker's WSAA login may hold the ticket lock. */
+    private const TICKET_LOCK_TIMEOUT = 10;
 
     public function ticket(string $serviceName): Ticket
     {
@@ -28,31 +30,29 @@ class WsAa extends AbstractWsAfip implements TicketProvider
         $key = "wsaa-{$this->configuration->environment->value}-ta-{$serviceName}-{$fingerprint}";
         $storage = $this->configuration->storage;
 
-        return (
-            $this->cachedTicket($key) ?? $storage->withTicketLock(
-                $key,
-                $this->configuration->network->lockTimeout,
-                function () use ($key, $serviceName, $storage): Ticket {
-                    // Another PHP worker may have refreshed the ticket while we waited.
-                    $cached = $this->cachedTicket($key);
-                    if ($cached !== null) {
-                        return $cached;
-                    }
-                    $xml = $this->login($this->sign($this->loginRequest($serviceName)));
-                    $ticket = self::parse($xml);
-                    if (!$ticket->isValid()) {
-                        throw new ArcaUnavailable('WSAA returned an expired ticket.', true);
-                    }
-                    $storage->writeTicket($key, $this->seal($xml, $key));
-                    $this->configuration->logger->info('WSAA login for {service}, valid until {expires}', [
-                        'service' => $serviceName,
-                        'expires' => $ticket->expiresAt?->format(DATE_ATOM) ?? 'unknown',
-                    ]);
+        return $this->cachedTicket($key) ?? $storage->withTicketLock($key, self::TICKET_LOCK_TIMEOUT, function () use (
+            $key,
+            $serviceName,
+            $storage,
+        ): Ticket {
+            // Another PHP worker may have refreshed the ticket while we waited.
+            $cached = $this->cachedTicket($key);
+            if ($cached !== null) {
+                return $cached;
+            }
+            $xml = $this->login($this->sign($this->loginRequest($serviceName)));
+            $ticket = self::parse($xml);
+            if (!$ticket->isValid()) {
+                throw new ArcaUnavailable('WSAA returned an expired ticket.', true);
+            }
+            $storage->writeTicket($key, $this->seal($xml, $key));
+            $this->configuration->logger->info('WSAA login for {service}, valid until {expires}', [
+                'service' => $serviceName,
+                'expires' => $ticket->expiresAt?->format(DATE_ATOM) ?? 'unknown',
+            ]);
 
-                    return $ticket;
-                },
-            )
-        );
+            return $ticket;
+        });
     }
 
     protected function service(): string

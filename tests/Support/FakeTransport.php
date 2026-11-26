@@ -10,8 +10,6 @@ use Closure;
 final class FakeTransport implements SoapTransport
 {
     public array $calls = [];
-    public ?string $request = null;
-    public ?string $response = null;
 
     public function __construct(
         private ?Closure $handler = null,
@@ -22,15 +20,5 @@ final class FakeTransport implements SoapTransport
         $this->calls[] = [$method, $params];
 
         return $this->handler !== null ? ($this->handler)($method, $params) : new \stdClass();
-    }
-
-    public function getLastRequest(): ?string
-    {
-        return $this->request;
-    }
-
-    public function getLastResponse(): ?string
-    {
-        return $this->response;
     }
 }

@@ -116,24 +116,16 @@ mismo almacenamiento**. Las sesiones se separan por huella.
 ## Red y diagnóstico
 
 ```php
-use Afiphp\NetworkOptions;
-
-$network = new NetworkOptions(
-    connectionTimeout: 10,   // Segundos.
-    readTimeout: 60,         // Por lectura, no total.
-    saveSoapMessages: false, // SOAP redactado; puede tener datos personales.
-    lockTimeout: 10,         // Espera del bloqueo de autenticación.
-    allowLegacyTls: false,   // DH antiguo (SECLEVEL=1); sigue verificando CA y host.
-);
-// new Configuration(..., network: $network)
+new Configuration(..., timeout: 60); // Segundos de espera de cada respuesta de ARCA.
 ```
 
-No hay reintentos automáticos. El transporte cambia temporalmente
-`default_socket_timeout`, así que usá un runtime síncrono.
+Un `timeout` corto deja más emisiones sin confirmar: si se corta mientras ARCA
+autoriza, hay que resolverla con `retryIssue()`. No hay reintentos
+automáticos. El transporte cambia temporalmente `default_socket_timeout`, así
+que usá un runtime síncrono.
 
-`salesPointLockTimeout` (120 segundos) es cuánto espera una emisión a que
-termine otra en el mismo punto de venta: ver
-[emisiones simultáneas](conciliacion.md#emisiones-simultáneas).
+Una emisión espera hasta 120 segundos a que termine otra en el mismo punto de
+venta: ver [emisiones simultáneas](conciliacion.md#emisiones-simultáneas).
 
 ### Logs
 

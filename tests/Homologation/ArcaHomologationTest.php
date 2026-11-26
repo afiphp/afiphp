@@ -27,7 +27,6 @@ use Afiphp\Exceptions\WsException;
 use Afiphp\Internal\Billing\InvoiceMapper;
 use Afiphp\Internal\WebServices\WsFeV1;
 use Afiphp\Internal\WebServices\WsResponse;
-use Afiphp\NetworkOptions;
 use Afiphp\Storage\FileStorage;
 use DateTimeImmutable;
 use DateTimeZone;
@@ -90,7 +89,6 @@ final class ArcaHomologationTest extends TestCase
             ),
             new FileStorage($storage),
             Environment::HOMOLOGATION, // Hard-coded on purpose: this suite must never reach production.
-            new NetworkOptions(saveSoapMessages: true),
         );
     }
 

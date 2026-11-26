@@ -9,7 +9,6 @@ use Afiphp\Configuration;
 use Afiphp\Credentials;
 use Afiphp\Environment;
 use Afiphp\Internal\WebServices\WsFeV1;
-use Afiphp\NetworkOptions;
 use Afiphp\Storage\FileStorage;
 use Afiphp\Storage\Storage;
 use PHPUnit\Framework\TestCase as PHPUnitTestCase;
@@ -69,7 +68,6 @@ abstract class TestCase extends PHPUnitTestCase
     protected function configuration(
         string $cuit = '20111111112',
         Environment $environment = Environment::HOMOLOGATION,
-        NetworkOptions $network = new NetworkOptions(),
         ?Credentials $credentials = null,
         ?Storage $storage = null,
     ): Configuration {
@@ -79,7 +77,6 @@ abstract class TestCase extends PHPUnitTestCase
             $credentials ?? $this->identity(),
             $storage ?? $this->storage(),
             $environment,
-            $network,
         );
     }
 

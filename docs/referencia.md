@@ -43,7 +43,7 @@ el certificado.
 | `credentials` | `Credentials` | Obligatorio. |
 | `storage` | `Afiphp\Storage\Storage` | Obligatorio. |
 | `environment` | `Environment` | `HOMOLOGATION` |
-| `network` | `NetworkOptions` | `new NetworkOptions()` |
+| `timeout` | `int` | `60` segundos de espera de cada respuesta de ARCA. |
 | `logger` | `Psr\Log\LoggerInterface` | `new NullLogger()`. Ver [logs](configuracion.md#logs). |
 
 ### Credentials (`Afiphp`)
@@ -62,19 +62,6 @@ Expone `fingerprint` (SHA-256 del certificado DER), `validFrom` y `expiresAt`
 | Parámetro | Tipo | Predeterminado |
 |---|---|---|
 | `directory` | `string` | Obligatorio. |
-
-### NetworkOptions (`Afiphp`)
-
-| Parámetro | Tipo | Predeterminado |
-|---|---|---|
-| `connectionTimeout` | `int` | `10` segundos. |
-| `readTimeout` | `int` | `60` segundos. |
-| `saveSoapMessages` | `bool` | `false` |
-| `lockTimeout` | `int` | `10` segundos de espera del bloqueo de login. |
-| `allowLegacyTls` | `bool` | `false` |
-| `salesPointLockTimeout` | `int` | `120` segundos de espera a otra emisión en el mismo punto de venta. |
-
-Ver [configuración](configuracion.md) y [almacenamiento](almacenamiento.md).
 
 ## Comprobante
 

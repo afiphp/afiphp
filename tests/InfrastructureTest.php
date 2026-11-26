@@ -10,7 +10,6 @@ use Afiphp\Exceptions\InvalidResponseException;
 use Afiphp\Exceptions\WsException;
 use Afiphp\Internal\WebServices\Ticket;
 use Afiphp\Internal\WebServices\WsFeV1;
-use Afiphp\NetworkOptions;
 use Tests\Support\FakeTicketProvider;
 use Tests\Support\FakeTransport;
 
@@ -210,32 +209,5 @@ final class InfrastructureTest extends TestCase
                 self::assertSame($response, $exception->getResponse());
             }
         }
-    }
-
-    public function testOptionalDiagnosticsRetainResponseRedactSecretsAndDoNotMaskSuccess(): void
-    {
-        $transport = new FakeTransport(static fn (): object => (object) ['AppServer' => 'OK']);
-        $transport->request = '<Envelope><Token>secret-token</Token><Sign>secret-sign</Sign></Envelope>';
-        $transport->response = '<Envelope><Result>actual-response</Result></Envelope>';
-        $service = new WsFeV1(
-            $this->configuration(network: new NetworkOptions(saveSoapMessages: true)),
-            $transport,
-            new FakeTicketProvider(),
-        );
-        self::assertSame('OK', $service->execute('FEDummy')->AppServer);
-        $files = glob($this->directory . '/storage/diagnostics/*.xml');
-        self::assertCount(2, $files);
-        $contents = implode('', array_map('file_get_contents', $files));
-        self::assertStringContainsString('actual-response', $contents);
-        self::assertStringNotContainsString('secret-token', $contents);
-        self::assertStringNotContainsString('secret-sign', $contents);
-        self::assertSame(0600, fileperms($files[0]) & 0777);
-        // A disk failure in optional diagnostics is not a fiscal failure.
-        foreach ($files as $file) {
-            unlink($file);
-        }
-        rmdir($this->directory . '/storage/diagnostics');
-        file_put_contents($this->directory . '/storage/diagnostics', 'not a directory');
-        self::assertSame('OK', $service->execute('FEDummy')->AppServer);
     }
 }
